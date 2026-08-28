@@ -1,4 +1,4 @@
-package com.liv.ol1viapa
+package com.l1vo.ol1via.pa
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import com.liv.ol1viapa.ui.theme.Ol1viaPATheme
+import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
             Ol1viaPATheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Greeting(
-                        name = "Android",
+                        name = "Ol1via",
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -42,6 +42,6 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 @Composable
 fun GreetingPreview() {
     Ol1viaPATheme {
-        Greeting("Android")
+        Greeting("Ol1via")
     }
 }
