@@ -114,14 +114,12 @@ fun Ol1viaHomeScreen(
         isThinking = true
 
         Ol1viaApi.sendMessage(text) { result ->
-            runOnUiThread {
-                result.onSuccess { reply ->
-                    messages.add(ChatMessage(reply, true))
-                }.onFailure { error ->
-                    messages.add(ChatMessage("Sorry, I couldn't reach my AI brain right now. Please check your internet connection and try again.", true))
-                }
-                isThinking = false
+            result.onSuccess { reply ->
+                messages.add(ChatMessage(reply, true))
+            }.onFailure {
+                messages.add(ChatMessage("Sorry, I couldn't reach my AI brain right now. Please check your internet connection and try again.", true))
             }
+            isThinking = false
         }
     }
 
