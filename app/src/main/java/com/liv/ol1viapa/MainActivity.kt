@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,17 +33,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
+
+data class ChatMessage(val text: String, val fromOl1via: Boolean)
 
 class MainActivity : ComponentActivity() {
     private var recognizedText by mutableStateOf("")
@@ -97,6 +101,15 @@ fun Ol1viaHomeScreen(
     onMicClick: () -> Unit
 ) {
     var message by remember(initialMessage) { mutableStateOf(initialMessage) }
+    val messages = remember { mutableStateListOf<ChatMessage>() }
+
+    fun sendMessage() {
+        val text = message.trim()
+        if (text.isEmpty()) return
+        messages.add(ChatMessage(text, false))
+        messages.add(ChatMessage("I'm listening. My AI brain isn't connected yet, but I'm ready.", true))
+        message = ""
+    }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
@@ -106,33 +119,60 @@ fun Ol1viaHomeScreen(
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(28.dp))
             Text("Ol1via", style = MaterialTheme.typography.headlineLarge)
             Text("Your personal assistant", style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            Box(
-                modifier = Modifier
-                    .size(180.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "O",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+            if (messages.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(140.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "O",
+                        style = MaterialTheme.typography.displayLarge,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(messages) { chatMessage ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (chatMessage.fromOl1via) Arrangement.Start else Arrangement.End
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(
+                                        if (chatMessage.fromOl1via) MaterialTheme.colorScheme.surfaceVariant
+                                        else MaterialTheme.colorScheme.primary
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                            ) {
+                                Text(
+                                    chatMessage.text,
+                                    color = if (chatMessage.fromOl1via) MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
-            Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Tap the microphone and talk to Ol1via.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.weight(if (messages.isEmpty()) 1f else 0f))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -147,12 +187,12 @@ fun Ol1viaHomeScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(20.dp)
                 )
-                IconButton(onClick = { }) {
+                IconButton(onClick = ::sendMessage) {
                     Icon(Icons.Default.Send, contentDescription = "Send")
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             IconButton(
                 onClick = onMicClick,
                 modifier = Modifier
@@ -167,7 +207,7 @@ fun Ol1viaHomeScreen(
                     modifier = Modifier.size(32.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
