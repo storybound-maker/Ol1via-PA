@@ -1,4 +1,4 @@
-package com.liv.ol1viapa.ui.theme
+package com.l1vo.ol1via.pa.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
