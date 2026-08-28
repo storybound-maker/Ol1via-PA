@@ -102,14 +102,27 @@ fun Ol1viaHomeScreen(
     onMicClick: () -> Unit
 ) {
     var message by remember(initialMessage) { mutableStateOf(initialMessage) }
+    var isThinking by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
 
     fun sendMessage() {
         val text = message.trim()
-        if (text.isEmpty()) return
+        if (text.isEmpty() || isThinking) return
+
         messages.add(ChatMessage(text, false))
-        messages.add(ChatMessage("I'm listening. My AI brain isn't connected yet, but I'm ready.", true))
         message = ""
+        isThinking = true
+
+        Ol1viaApi.sendMessage(text) { result ->
+            runOnUiThread {
+                result.onSuccess { reply ->
+                    messages.add(ChatMessage(reply, true))
+                }.onFailure { error ->
+                    messages.add(ChatMessage("Sorry, I couldn't reach my AI brain right now. Please check your internet connection and try again.", true))
+                }
+                isThinking = false
+            }
+        }
     }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -137,6 +150,7 @@ fun Ol1viaHomeScreen(
                 }
                 Spacer(modifier = Modifier.height(20.dp))
                 Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.weight(1f))
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -160,11 +174,15 @@ fun Ol1viaHomeScreen(
                             }
                         }
                     }
+                    if (isThinking) {
+                        item {
+                            Text("Ol1via is thinking…", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.weight(if (messages.isEmpty()) 1f else 0f))
-
+            Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -176,9 +194,10 @@ fun Ol1viaHomeScreen(
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Ask Ol1via...") },
                     singleLine = true,
+                    enabled = !isThinking,
                     shape = RoundedCornerShape(20.dp)
                 )
-                IconButton(onClick = ::sendMessage) {
+                IconButton(onClick = ::sendMessage, enabled = !isThinking) {
                     Icon(Icons.Default.Send, contentDescription = "Send")
                 }
             }
