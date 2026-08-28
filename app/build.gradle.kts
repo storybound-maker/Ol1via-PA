@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.liv.ol1viapa"
+    namespace = "com.l1vo.ol1via.pa"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.liv.ol1viapa"
+        applicationId = "com.l1vo.ol1via.pa"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
