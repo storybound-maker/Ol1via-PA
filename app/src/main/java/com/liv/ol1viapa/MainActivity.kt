@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -132,19 +133,13 @@ fun Ol1viaHomeScreen(
                         .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "O",
-                        style = MaterialTheme.typography.displayLarge,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    Text("O", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onPrimary)
                 }
                 Spacer(modifier = Modifier.height(20.dp))
                 Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
             } else {
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(messages) { chatMessage ->
@@ -155,16 +150,12 @@ fun Ol1viaHomeScreen(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(18.dp))
-                                    .background(
-                                        if (chatMessage.fromOl1via) MaterialTheme.colorScheme.surfaceVariant
-                                        else MaterialTheme.colorScheme.primary
-                                    )
+                                    .background(if (chatMessage.fromOl1via) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary)
                                     .padding(horizontal = 16.dp, vertical = 12.dp)
                             ) {
                                 Text(
                                     chatMessage.text,
-                                    color = if (chatMessage.fromOl1via) MaterialTheme.colorScheme.onSurfaceVariant
-                                    else MaterialTheme.colorScheme.onPrimary
+                                    color = if (chatMessage.fromOl1via) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
                                 )
                             }
                         }
@@ -195,17 +186,9 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(12.dp))
             IconButton(
                 onClick = onMicClick,
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
             ) {
-                Icon(
-                    Icons.Default.Mic,
-                    contentDescription = "Talk to Ol1via",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(32.dp)
-                )
+                Icon(Icons.Default.Mic, contentDescription = "Talk to Ol1via", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
             }
             Spacer(modifier = Modifier.height(20.dp))
         }
