@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -42,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
@@ -104,6 +106,7 @@ fun Ol1viaHomeScreen(
     var message by remember(initialMessage) { mutableStateOf(initialMessage) }
     var isThinking by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
+    val context = LocalContext.current
 
     fun sendMessage() {
         val text = message.trim()
@@ -114,12 +117,16 @@ fun Ol1viaHomeScreen(
         isThinking = true
 
         Ol1viaApi.sendMessage(text) { result ->
-            result.onSuccess { reply ->
-                messages.add(ChatMessage(reply, true))
-            }.onFailure {
-                messages.add(ChatMessage("Sorry, I couldn't reach my AI brain right now. Please check your internet connection and try again.", true))
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                result.onSuccess { reply ->
+                    messages.add(ChatMessage(reply, true))
+                }.onFailure { error ->
+                    val detail = error.message ?: "Unknown connection error"
+                    messages.add(ChatMessage("I couldn't reach my AI brain. $detail", true))
+                    Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
+                }
+                isThinking = false
             }
-            isThinking = false
         }
     }
 
