@@ -40,7 +40,7 @@ fun Ol1viaPATheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = Ol1viaTypography,
         content = content
     )
 }
