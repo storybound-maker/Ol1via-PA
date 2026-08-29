@@ -55,13 +55,18 @@ data class ChatMessage(val text: String, val fromOl1via: Boolean)
 class MainActivity : ComponentActivity() {
     private var recognizedText by mutableStateOf("")
     private var textToSpeech: TextToSpeech? = null
+    private var sendRecognizedMessage: ((String) -> Unit)? = null
 
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            if (!matches.isNullOrEmpty()) recognizedText = matches[0]
+            val recognized = matches?.firstOrNull()?.trim().orEmpty()
+            if (recognized.isNotEmpty()) {
+                recognizedText = recognized
+                sendRecognizedMessage?.invoke(recognized)
+            }
         }
     }
 
@@ -87,7 +92,10 @@ class MainActivity : ComponentActivity() {
                 Ol1viaHomeScreen(
                     initialMessage = recognizedText,
                     onMicClick = ::startListening,
-                    onOl1viaReply = ::speak
+                    onOl1viaReply = ::speak,
+                    registerVoiceMessageSender = { sender ->
+                        sendRecognizedMessage = sender
+                    }
                 )
             }
         }
@@ -103,6 +111,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        sendRecognizedMessage = null
         textToSpeech?.stop()
         textToSpeech?.shutdown()
         textToSpeech = null
@@ -130,15 +139,16 @@ class MainActivity : ComponentActivity() {
 fun Ol1viaHomeScreen(
     initialMessage: String,
     onMicClick: () -> Unit,
-    onOl1viaReply: (String) -> Unit
+    onOl1viaReply: (String) -> Unit,
+    registerVoiceMessageSender: ((String) -> Unit) -> Unit
 ) {
-    var message by remember(initialMessage) { mutableStateOf(initialMessage) }
+    var message by remember { mutableStateOf(initialMessage) }
     var isThinking by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val context = LocalContext.current
 
-    fun sendMessage() {
-        val text = message.trim()
+    fun sendText(textToSend: String) {
+        val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
 
         messages.add(ChatMessage(text, false))
@@ -158,6 +168,14 @@ fun Ol1viaHomeScreen(
                 isThinking = false
             }
         }
+    }
+
+    registerVoiceMessageSender { recognized ->
+        sendText(recognized)
+    }
+
+    fun sendMessage() {
+        sendText(message)
     }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -240,6 +258,7 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(12.dp))
             IconButton(
                 onClick = onMicClick,
+                enabled = !isThinking,
                 modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Default.Mic, contentDescription = "Talk to Ol1via", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
