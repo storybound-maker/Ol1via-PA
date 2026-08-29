@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -66,6 +67,7 @@ data class ChatMessage(val text: String, val fromOl1via: Boolean)
 class MainActivity : ComponentActivity() {
     private var recognizedText by mutableStateOf("")
     private var isListening by mutableStateOf(false)
+    private var isSpeaking by mutableStateOf(false)
     private var textToSpeech: TextToSpeech? = null
     private var sendRecognizedMessage: ((String) -> Unit)? = null
 
@@ -96,6 +98,19 @@ class MainActivity : ComponentActivity() {
                 textToSpeech?.language = Locale.US
                 textToSpeech?.setSpeechRate(0.95f)
                 textToSpeech?.setPitch(1.05f)
+                textToSpeech?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {
+                        runOnUiThread { isSpeaking = true }
+                    }
+
+                    override fun onDone(utteranceId: String?) {
+                        runOnUiThread { isSpeaking = false }
+                    }
+
+                    override fun onError(utteranceId: String?) {
+                        runOnUiThread { isSpeaking = false }
+                    }
+                })
             }
         }
 
@@ -105,6 +120,7 @@ class MainActivity : ComponentActivity() {
                 Ol1viaHomeScreen(
                     initialMessage = recognizedText,
                     isListening = isListening,
+                    isSpeaking = isSpeaking,
                     onMicClick = ::startListening,
                     onOl1viaReply = ::speak,
                     registerVoiceMessageSender = { sender ->
@@ -157,6 +173,7 @@ class MainActivity : ComponentActivity() {
 fun Ol1viaHomeScreen(
     initialMessage: String,
     isListening: Boolean,
+    isSpeaking: Boolean,
     onMicClick: () -> Unit,
     onOl1viaReply: (String) -> Unit,
     registerVoiceMessageSender: ((String) -> Unit) -> Unit
@@ -264,14 +281,22 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             if (messages.isEmpty()) {
-                if (isListening) {
-                    ListeningOl1viaEyes()
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Text("I'm listening…", style = MaterialTheme.typography.headlineSmall)
-                } else {
-                    BlinkingOl1viaEyes()
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
+                when {
+                    isListening -> {
+                        ListeningOl1viaEyes()
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text("I'm listening…", style = MaterialTheme.typography.headlineSmall)
+                    }
+                    isSpeaking -> {
+                        SpeakingOl1viaEyes()
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text("Ol1via is speaking…", style = MaterialTheme.typography.headlineSmall)
+                    }
+                    else -> {
+                        BlinkingOl1viaEyes()
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
+                    }
                 }
                 Spacer(modifier = Modifier.weight(1f))
             } else {
@@ -316,10 +341,10 @@ fun Ol1viaHomeScreen(
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Ask Ol1via...") },
                     singleLine = true,
-                    enabled = !isThinking && !isListening,
+                    enabled = !isThinking && !isListening && !isSpeaking,
                     shape = RoundedCornerShape(20.dp)
                 )
-                IconButton(onClick = ::sendMessage, enabled = !isThinking && !isListening) {
+                IconButton(onClick = ::sendMessage, enabled = !isThinking && !isListening && !isSpeaking) {
                     Icon(Icons.Default.Send, contentDescription = "Send")
                 }
             }
@@ -327,7 +352,7 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(12.dp))
             IconButton(
                 onClick = onMicClick,
-                enabled = !isThinking && !isListening,
+                enabled = !isThinking && !isListening && !isSpeaking,
                 modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Default.Mic, contentDescription = "Talk to Olivia", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
@@ -407,6 +432,31 @@ private fun ListeningOl1viaEyes() {
             painter = painterResource(id = R.drawable.ol1via_eyes),
             contentDescription = "Ol1via listening",
             modifier = Modifier.size(width = 220.dp, height = listeningHeight.value.dp),
+            contentScale = ContentScale.FillBounds
+        )
+    }
+}
+
+@Composable
+private fun SpeakingOl1viaEyes() {
+    val speakingHeight = remember { Animatable(220f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            speakingHeight.animateTo(200f, animationSpec = tween(180))
+            speakingHeight.animateTo(220f, animationSpec = tween(180))
+            delay(80L)
+        }
+    }
+
+    Box(
+        modifier = Modifier.size(width = 220.dp, height = 220.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ol1via_eyes),
+            contentDescription = "Ol1via speaking",
+            modifier = Modifier.size(width = 220.dp, height = speakingHeight.value.dp),
             contentScale = ContentScale.FillBounds
         )
     }
