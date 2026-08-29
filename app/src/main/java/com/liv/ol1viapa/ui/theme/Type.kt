@@ -1,4 +1,4 @@
-package com.l1vo.ol1via.pa.ui.theme
+package com.liv.ol1viapa.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
