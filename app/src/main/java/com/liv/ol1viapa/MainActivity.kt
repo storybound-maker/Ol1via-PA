@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,9 +45,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.l1vo.ol1via.pa.R
 import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
 import org.json.JSONArray
 import org.json.JSONObject
@@ -152,20 +156,14 @@ fun Ol1viaHomeScreen(
 
     fun buildHistory(): List<JSONObject> {
         val history = mutableListOf<JSONObject>()
-
         Ol1viaMemory.buildMemoryHistoryMessage(context)?.let { history.add(it) }
-
         history.addAll(
             messages.takeLast(20).map { chatMessage ->
                 JSONObject()
                     .put("role", if (chatMessage.fromOl1via) "model" else "user")
-                    .put(
-                        "parts",
-                        JSONArray().put(JSONObject().put("text", chatMessage.text))
-                    )
+                    .put("parts", JSONArray().put(JSONObject().put("text", chatMessage.text)))
             }
         )
-
         return history
     }
 
@@ -180,7 +178,6 @@ fun Ol1viaHomeScreen(
 
         val lower = text.lowercase(Locale.US)
 
-        // Local memory commands do not need an API request.
         if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) ||
             lower.matches(Regex("^what do you know about me[.!?]?$")) ||
             lower.matches(Regex("^show my memories[.!?]?$"))
@@ -191,8 +188,7 @@ fun Ol1viaHomeScreen(
             val reply = if (memories.isEmpty()) {
                 "I don't have any saved memories about you yet."
             } else {
-                "Here's what I remember about you:\n" +
-                    memories.joinToString("\n") { "• $it" }
+                "Here's what I remember about you:\n" + memories.joinToString("\n") { "• $it" }
             }
             showLocalMemoryReply(reply)
             return
@@ -209,26 +205,18 @@ fun Ol1viaHomeScreen(
             return
         }
 
-        val forgetMatch = Regex(
-            "(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$"
-        ).find(text)
+        val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$").find(text)
         if (forgetMatch != null) {
             messages.add(ChatMessage(text, false))
             message = ""
             val target = forgetMatch.groupValues[1].trim()
             val removed = Ol1viaMemory.forgetMemory(context, target)
-            val reply = if (removed) {
-                "Done. I've forgotten that memory."
-            } else {
-                "I couldn't find a saved memory matching that."
-            }
+            val reply = if (removed) "Done. I've forgotten that memory." else "I couldn't find a saved memory matching that."
             showLocalMemoryReply(reply)
             return
         }
 
-        // Save explicit and simple personal facts before sending the request.
         Ol1viaMemory.rememberFromUserMessage(context, text)
-
         val history = buildHistory()
         messages.add(ChatMessage(text, false))
         message = ""
@@ -249,20 +237,13 @@ fun Ol1viaHomeScreen(
         }
     }
 
-    registerVoiceMessageSender { recognized ->
-        sendText(recognized)
-    }
+    registerVoiceMessageSender { recognized -> sendText(recognized) }
 
-    fun sendMessage() {
-        sendText(message)
-    }
+    fun sendMessage() { sendText(message) }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(28.dp))
@@ -271,15 +252,12 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             if (messages.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .size(140.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("O", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onPrimary)
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.ol1via_eyes),
+                    contentDescription = "Ol1via",
+                    modifier = Modifier.size(220.dp),
+                    contentScale = ContentScale.Fit
+                )
                 Spacer(modifier = Modifier.height(20.dp))
                 Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.weight(1f))
@@ -306,11 +284,7 @@ fun Ol1viaHomeScreen(
                             }
                         }
                     }
-                    if (isThinking) {
-                        item {
-                            Text("Ol1via is thinking…", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
+                    if (isThinking) item { Text("Ol1via is thinking…", style = MaterialTheme.typography.bodyMedium) }
                 }
             }
 
