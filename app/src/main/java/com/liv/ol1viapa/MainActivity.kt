@@ -48,6 +48,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 
 data class ChatMessage(val text: String, val fromOl1via: Boolean)
@@ -149,15 +151,27 @@ fun Ol1viaHomeScreen(
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val context = LocalContext.current
 
+    fun buildHistory(): List<JSONObject> {
+        return messages.takeLast(20).map { chatMessage ->
+            JSONObject()
+                .put("role", if (chatMessage.fromOl1via) "model" else "user")
+                .put(
+                    "parts",
+                    JSONArray().put(JSONObject().put("text", chatMessage.text))
+                )
+        }
+    }
+
     fun sendText(textToSend: String) {
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
 
+        val history = buildHistory()
         messages.add(ChatMessage(text, false))
         message = ""
         isThinking = true
 
-        Ol1viaApi.sendMessage(text) { result ->
+        Ol1viaApi.sendMessage(text, history) { result ->
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 result.onSuccess { reply ->
                     messages.add(ChatMessage(reply, true))
