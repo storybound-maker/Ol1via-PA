@@ -152,19 +152,31 @@ fun Ol1viaHomeScreen(
     val context = LocalContext.current
 
     fun buildHistory(): List<JSONObject> {
-        return messages.takeLast(20).map { chatMessage ->
-            JSONObject()
-                .put("role", if (chatMessage.fromOl1via) "model" else "user")
-                .put(
-                    "parts",
-                    JSONArray().put(JSONObject().put("text", chatMessage.text))
-                )
-        }
+        val history = mutableListOf<JSONObject>()
+
+        // Add permanent memories first so Groq can use them after the app is reopened.
+        Ol1viaMemory.buildMemoryHistoryMessage(context)?.let { history.add(it) }
+
+        history.addAll(
+            messages.takeLast(20).map { chatMessage ->
+                JSONObject()
+                    .put("role", if (chatMessage.fromOl1via) "model" else "user")
+                    .put(
+                        "parts",
+                        JSONArray().put(JSONObject().put("text", chatMessage.text))
+                    )
+            }
+        )
+
+        return history
     }
 
     fun sendText(textToSend: String) {
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
+
+        // Save simple personal facts before sending the request.
+        Ol1viaMemory.rememberFromUserMessage(context, text)
 
         val history = buildHistory()
         messages.add(ChatMessage(text, false))
