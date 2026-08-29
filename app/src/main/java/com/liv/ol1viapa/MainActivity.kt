@@ -284,7 +284,10 @@ fun Ol1viaHomeScreen(
                             }
                         }
                     }
-                    if (isThinking) item { Text("Ol1via is thinking…", style = MaterialTheme.typography.bodyMedium) }
+                    if (isThinking) {
+                        item { ThinkingOl1viaEyes() }
+                        item { Text("Ol1via is thinking…", style = MaterialTheme.typography.bodyMedium) }
+                    }
                 }
             }
 
@@ -341,6 +344,31 @@ private fun BlinkingOl1viaEyes() {
             painter = painterResource(id = R.drawable.ol1via_eyes),
             contentDescription = "Ol1via",
             modifier = Modifier.size(width = 220.dp, height = blinkHeight.value.dp),
+            contentScale = ContentScale.FillBounds
+        )
+    }
+}
+
+@Composable
+private fun ThinkingOl1viaEyes() {
+    val thinkingHeight = remember { Animatable(220f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            thinkingHeight.animateTo(190f, animationSpec = tween(350))
+            thinkingHeight.animateTo(220f, animationSpec = tween(450))
+            delay(180L)
+        }
+    }
+
+    Box(
+        modifier = Modifier.size(width = 180.dp, height = 220.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ol1via_eyes),
+            contentDescription = "Ol1via thinking",
+            modifier = Modifier.size(width = 180.dp, height = thinkingHeight.value.dp),
             contentScale = ContentScale.FillBounds
         )
     }
