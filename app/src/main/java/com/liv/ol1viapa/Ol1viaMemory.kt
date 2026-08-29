@@ -88,17 +88,27 @@ object Ol1viaMemory {
     }
 
     fun forgetMemory(context: Context, request: String): Boolean {
-        val target = request.trim()
-            .removePrefix("that ")
+        var target = request.trim()
+            .replaceFirst(Regex("(?i)^that\\s+"), "")
+            .replaceFirst(Regex("(?i)^my\\s+"), "")
             .trim()
             .trimEnd('.', '!', '?')
 
         if (target.isEmpty()) return false
 
         val memories = getMemories(context)
+        val targetNormalized = target.lowercase().replace(Regex("\\s+"), " ").trim()
+
         val remaining = memories.filterNot { memory ->
-            memory.equals(target, ignoreCase = true) ||
-                memory.contains(target, ignoreCase = true)
+            val normalizedMemory = memory
+                .lowercase()
+                .replace(Regex("\\s+"), " ")
+                .trim()
+
+            normalizedMemory == targetNormalized ||
+                normalizedMemory.contains(targetNormalized) ||
+                targetNormalized.contains(normalizedMemory) ||
+                matchesCommonMemoryPattern(normalizedMemory, targetNormalized)
         }
 
         if (remaining.size == memories.size) return false
@@ -107,6 +117,31 @@ object Ol1viaMemory {
         remaining.forEach { array.put(it) }
         preferences(context).edit().putString(MEMORY_KEY, array.toString()).apply()
         return true
+    }
+
+    private fun matchesCommonMemoryPattern(memory: String, target: String): Boolean {
+        val favorite = Regex("^the user's favorite (.+) is (.+)\\.?$").find(memory)
+        if (favorite != null) {
+            val subject = favorite.groupValues[1]
+            val value = favorite.groupValues[2]
+            val shortForm = "favorite $subject is $value"
+            val userForm = "my favorite $subject is $value"
+            return target == shortForm || target == userForm
+        }
+
+        val name = Regex("^the user's name is (.+)\\.?$").find(memory)
+        if (name != null) {
+            val value = name.groupValues[1]
+            return target == "name is $value" || target == "my name is $value"
+        }
+
+        val callMe = Regex("^the user prefers to be called (.+)\\.?$").find(memory)
+        if (callMe != null) {
+            val value = callMe.groupValues[1]
+            return target == "call me $value" || target == "prefers to be called $value"
+        }
+
+        return false
     }
 
     fun clearMemories(context: Context) {
