@@ -47,6 +47,14 @@ object Ol1viaMemory {
         val text = message.trim()
         if (text.isEmpty()) return
 
+        val explicit = Regex(
+            "(?i)^remember(?:\\s+that)?\\s+(.+?)[.!?]?$"
+        ).find(text)
+        if (explicit != null) {
+            val value = explicit.groupValues[1].trim()
+            if (value.isNotEmpty()) saveMemory(context, value)
+        }
+
         val favorite = Regex(
             "(?i)\\bmy\\s+favorite\\s+(.+?)\\s+is\\s+(.+?)(?:[.!?]|$)"
         ).find(text)
@@ -77,6 +85,28 @@ object Ol1viaMemory {
                 saveMemory(context, "The user prefers to be called $value.")
             }
         }
+    }
+
+    fun forgetMemory(context: Context, request: String): Boolean {
+        val target = request.trim()
+            .removePrefix("that ")
+            .trim()
+            .trimEnd('.', '!', '?')
+
+        if (target.isEmpty()) return false
+
+        val memories = getMemories(context)
+        val remaining = memories.filterNot { memory ->
+            memory.equals(target, ignoreCase = true) ||
+                memory.contains(target, ignoreCase = true)
+        }
+
+        if (remaining.size == memories.size) return false
+
+        val array = JSONArray()
+        remaining.forEach { array.put(it) }
+        preferences(context).edit().putString(MEMORY_KEY, array.toString()).apply()
+        return true
     }
 
     fun clearMemories(context: Context) {
