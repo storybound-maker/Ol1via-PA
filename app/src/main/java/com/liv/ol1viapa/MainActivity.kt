@@ -104,7 +104,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
-        // The visual brand remains "Ol1via", but TTS says the name as "Olivia".
         val spokenText = text.replace("Ol1via", "Olivia", ignoreCase = true)
         textToSpeech?.speak(
             spokenText,
@@ -154,7 +153,6 @@ fun Ol1viaHomeScreen(
     fun buildHistory(): List<JSONObject> {
         val history = mutableListOf<JSONObject>()
 
-        // Add permanent memories first so Groq can use them after the app is reopened.
         Ol1viaMemory.buildMemoryHistoryMessage(context)?.let { history.add(it) }
 
         history.addAll(
@@ -171,11 +169,64 @@ fun Ol1viaHomeScreen(
         return history
     }
 
+    fun showLocalMemoryReply(reply: String) {
+        messages.add(ChatMessage(reply, true))
+        onOl1viaReply(reply)
+    }
+
     fun sendText(textToSend: String) {
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
 
-        // Save simple personal facts before sending the request.
+        val lower = text.lowercase(Locale.US)
+
+        // Local memory commands do not need an API request.
+        if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) ||
+            lower.matches(Regex("^what do you know about me[.!?]?$")) ||
+            lower.matches(Regex("^show my memories[.!?]?$"))
+        ) {
+            messages.add(ChatMessage(text, false))
+            message = ""
+            val memories = Ol1viaMemory.getMemories(context)
+            val reply = if (memories.isEmpty()) {
+                "I don't have any saved memories about you yet."
+            } else {
+                "Here's what I remember about you:\n" +
+                    memories.joinToString("\n") { "• $it" }
+            }
+            showLocalMemoryReply(reply)
+            return
+        }
+
+        if (lower.matches(Regex("^forget everything( you remember)?( about me)?[.!?]?$")) ||
+            lower.matches(Regex("^forget all( my)? memories[.!?]?$")) ||
+            lower.matches(Regex("^clear (all )?(my )?memories[.!?]?$"))
+        ) {
+            messages.add(ChatMessage(text, false))
+            message = ""
+            Ol1viaMemory.clearMemories(context)
+            showLocalMemoryReply("Done. I've forgotten all of the memories I had saved about you.")
+            return
+        }
+
+        val forgetMatch = Regex(
+            "(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$"
+        ).find(text)
+        if (forgetMatch != null) {
+            messages.add(ChatMessage(text, false))
+            message = ""
+            val target = forgetMatch.groupValues[1].trim()
+            val removed = Ol1viaMemory.forgetMemory(context, target)
+            val reply = if (removed) {
+                "Done. I've forgotten that memory."
+            } else {
+                "I couldn't find a saved memory matching that."
+            }
+            showLocalMemoryReply(reply)
+            return
+        }
+
+        // Save explicit and simple personal facts before sending the request.
         Ol1viaMemory.rememberFromUserMessage(context, text)
 
         val history = buildHistory()
