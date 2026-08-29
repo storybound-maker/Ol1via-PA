@@ -1,4 +1,4 @@
-package com.l1vo.ol1via.pa
+package com.liv.ol1viapa
 
 import android.Manifest
 import android.content.Intent
@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,17 +47,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.l1vo.ol1via.pa.R
-import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
+import com.liv.ol1viapa.ui.theme.Ol1viaPATheme
+import com.liv.ol1viapa.R
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.random.Random
 
 data class ChatMessage(val text: String, val fromOl1via: Boolean)
 
@@ -252,12 +257,7 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             if (messages.isEmpty()) {
-                Image(
-                    painter = painterResource(id = R.drawable.ol1via_eyes),
-                    contentDescription = "Ol1via",
-                    modifier = Modifier.size(220.dp),
-                    contentScale = ContentScale.Fit
-                )
+                BlinkingOl1viaEyes()
                 Spacer(modifier = Modifier.height(20.dp))
                 Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.weight(1f))
@@ -318,5 +318,30 @@ fun Ol1viaHomeScreen(
             }
             Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+}
+
+@Composable
+private fun BlinkingOl1viaEyes() {
+    val blinkHeight = remember { Animatable(220f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(Random.nextLong(2500L, 5000L))
+            blinkHeight.animateTo(8f, animationSpec = tween(90))
+            blinkHeight.animateTo(220f, animationSpec = tween(120))
+        }
+    }
+
+    Box(
+        modifier = Modifier.size(width = 220.dp, height = 220.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ol1via_eyes),
+            contentDescription = "Ol1via",
+            modifier = Modifier.size(width = 220.dp, height = blinkHeight.value.dp),
+            contentScale = ContentScale.FillBounds
+        )
     }
 }
