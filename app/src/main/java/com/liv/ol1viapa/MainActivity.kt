@@ -102,11 +102,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
+        // The visual brand remains "Ol1via", but TTS says the name as "Olivia".
+        val spokenText = text.replace("Ol1via", "Olivia", ignoreCase = true)
         textToSpeech?.speak(
-            text,
+            spokenText,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "ol1via_reply"
+            "olivia_reply"
         )
     }
 
@@ -129,7 +131,7 @@ class MainActivity : ComponentActivity() {
     private fun startSpeechRecognition() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Ol1via")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Olivia")
         }
         if (intent.resolveActivity(packageManager) != null) speechLauncher.launch(intent)
     }
@@ -261,7 +263,7 @@ fun Ol1viaHomeScreen(
                 enabled = !isThinking,
                 modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
             ) {
-                Icon(Icons.Default.Mic, contentDescription = "Talk to Ol1via", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
+                Icon(Icons.Default.Mic, contentDescription = "Talk to Olivia", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
             }
             Spacer(modifier = Modifier.height(20.dp))
         }
