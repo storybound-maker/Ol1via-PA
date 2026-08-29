@@ -65,12 +65,14 @@ data class ChatMessage(val text: String, val fromOl1via: Boolean)
 
 class MainActivity : ComponentActivity() {
     private var recognizedText by mutableStateOf("")
+    private var isListening by mutableStateOf(false)
     private var textToSpeech: TextToSpeech? = null
     private var sendRecognizedMessage: ((String) -> Unit)? = null
 
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        isListening = false
         if (result.resultCode == RESULT_OK) {
             val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             val recognized = matches?.firstOrNull()?.trim().orEmpty()
@@ -102,6 +104,7 @@ class MainActivity : ComponentActivity() {
             Ol1viaPATheme {
                 Ol1viaHomeScreen(
                     initialMessage = recognizedText,
+                    isListening = isListening,
                     onMicClick = ::startListening,
                     onOl1viaReply = ::speak,
                     registerVoiceMessageSender = { sender ->
@@ -143,13 +146,17 @@ class MainActivity : ComponentActivity() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Olivia")
         }
-        if (intent.resolveActivity(packageManager) != null) speechLauncher.launch(intent)
+        if (intent.resolveActivity(packageManager) != null) {
+            isListening = true
+            speechLauncher.launch(intent)
+        }
     }
 }
 
 @Composable
 fun Ol1viaHomeScreen(
     initialMessage: String,
+    isListening: Boolean,
     onMicClick: () -> Unit,
     onOl1viaReply: (String) -> Unit,
     registerVoiceMessageSender: ((String) -> Unit) -> Unit
@@ -257,9 +264,15 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             if (messages.isEmpty()) {
-                BlinkingOl1viaEyes()
-                Spacer(modifier = Modifier.height(20.dp))
-                Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
+                if (isListening) {
+                    ListeningOl1viaEyes()
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text("I'm listening…", style = MaterialTheme.typography.headlineSmall)
+                } else {
+                    BlinkingOl1viaEyes()
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text("How can I help?", style = MaterialTheme.typography.headlineSmall)
+                }
                 Spacer(modifier = Modifier.weight(1f))
             } else {
                 LazyColumn(
@@ -303,10 +316,10 @@ fun Ol1viaHomeScreen(
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Ask Ol1via...") },
                     singleLine = true,
-                    enabled = !isThinking,
+                    enabled = !isThinking && !isListening,
                     shape = RoundedCornerShape(20.dp)
                 )
-                IconButton(onClick = ::sendMessage, enabled = !isThinking) {
+                IconButton(onClick = ::sendMessage, enabled = !isThinking && !isListening) {
                     Icon(Icons.Default.Send, contentDescription = "Send")
                 }
             }
@@ -314,7 +327,7 @@ fun Ol1viaHomeScreen(
             Spacer(modifier = Modifier.height(12.dp))
             IconButton(
                 onClick = onMicClick,
-                enabled = !isThinking,
+                enabled = !isThinking && !isListening,
                 modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Default.Mic, contentDescription = "Talk to Olivia", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
@@ -369,6 +382,31 @@ private fun ThinkingOl1viaEyes() {
             painter = painterResource(id = R.drawable.ol1via_eyes),
             contentDescription = "Ol1via thinking",
             modifier = Modifier.size(width = 180.dp, height = thinkingHeight.value.dp),
+            contentScale = ContentScale.FillBounds
+        )
+    }
+}
+
+@Composable
+private fun ListeningOl1viaEyes() {
+    val listeningHeight = remember { Animatable(220f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            listeningHeight.animateTo(205f, animationSpec = tween(500))
+            listeningHeight.animateTo(220f, animationSpec = tween(500))
+            delay(120L)
+        }
+    }
+
+    Box(
+        modifier = Modifier.size(width = 220.dp, height = 220.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ol1via_eyes),
+            contentDescription = "Ol1via listening",
+            modifier = Modifier.size(width = 220.dp, height = listeningHeight.value.dp),
             contentScale = ContentScale.FillBounds
         )
     }
