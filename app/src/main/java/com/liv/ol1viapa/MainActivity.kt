@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -47,11 +48,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.l1vo.ol1via.pa.ui.theme.Ol1viaPATheme
+import java.util.Locale
 
 data class ChatMessage(val text: String, val fromOl1via: Boolean)
 
 class MainActivity : ComponentActivity() {
     private var recognizedText by mutableStateOf("")
+    private var textToSpeech: TextToSpeech? = null
 
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -70,15 +73,40 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech?.language = Locale.US
+                textToSpeech?.setSpeechRate(0.95f)
+                textToSpeech?.setPitch(1.05f)
+            }
+        }
+
         enableEdgeToEdge()
         setContent {
             Ol1viaPATheme {
                 Ol1viaHomeScreen(
                     initialMessage = recognizedText,
-                    onMicClick = ::startListening
+                    onMicClick = ::startListening,
+                    onOl1viaReply = ::speak
                 )
             }
         }
+    }
+
+    private fun speak(text: String) {
+        textToSpeech?.speak(
+            text,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "ol1via_reply"
+        )
+    }
+
+    override fun onDestroy() {
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        super.onDestroy()
     }
 
     private fun startListening() {
@@ -101,7 +129,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Ol1viaHomeScreen(
     initialMessage: String,
-    onMicClick: () -> Unit
+    onMicClick: () -> Unit,
+    onOl1viaReply: (String) -> Unit
 ) {
     var message by remember(initialMessage) { mutableStateOf(initialMessage) }
     var isThinking by remember { mutableStateOf(false) }
@@ -120,6 +149,7 @@ fun Ol1viaHomeScreen(
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 result.onSuccess { reply ->
                     messages.add(ChatMessage(reply, true))
+                    onOl1viaReply(reply)
                 }.onFailure { error ->
                     val detail = error.message ?: "Unknown connection error"
                     messages.add(ChatMessage("I couldn't reach my AI brain. $detail", true))
