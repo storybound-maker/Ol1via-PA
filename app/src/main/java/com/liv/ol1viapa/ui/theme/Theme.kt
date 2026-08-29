@@ -1,6 +1,5 @@
-package com.l1vo.ol1via.pa.ui.theme
+package com.liv.ol1viapa.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
