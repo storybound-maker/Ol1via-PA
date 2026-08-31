@@ -86,9 +86,9 @@ class LeauOverlayService : Service() {
                 tts?.setSpeechRate(0.95f)
                 tts?.setPitch(1.05f)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(id: String?) = handler.post { speechSpeaking = true; speechThinking = false; updateSpeechVisual() }
-                    override fun onDone(id: String?) = handler.post { speechSpeaking = false; updateSpeechVisual() }
-                    override fun onError(id: String?) = handler.post { speechSpeaking = false; updateSpeechVisual() }
+                    override fun onStart(id: String?) { handler.post { speechSpeaking = true; speechThinking = false; updateSpeechVisual() } }
+                    override fun onDone(id: String?) { handler.post { speechSpeaking = false; updateSpeechVisual() } }
+                    override fun onError(id: String?) { handler.post { speechSpeaking = false; updateSpeechVisual() } }
                 })
             }
         }
@@ -128,9 +128,7 @@ class LeauOverlayService : Service() {
     }
 
     private fun beginOverlaySpeech() {
-        if (speechSpeaking) {
-            tts?.stop(); speechSpeaking = false; speechThinking = false; updateSpeechVisual(); return
-        }
+        if (speechSpeaking) { tts?.stop(); speechSpeaking = false; speechThinking = false; updateSpeechVisual(); return }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             startActivity(Intent(this, MainActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP); putExtra("start_voice", true) })
             return
