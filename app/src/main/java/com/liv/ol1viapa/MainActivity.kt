@@ -3,6 +3,7 @@ package com.liv.ol1viapa
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -239,9 +240,56 @@ fun LeauHomeScreen(
         onLeauReply(reply)
     }
 
+    fun openAppCommand(input: String): Boolean {
+        val lower = input.lowercase(Locale.US).trim()
+        val command = Regex("^(open|launch|start|run|go to)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(lower)
+            ?: return false
+
+        val target = command.groupValues[2].trim()
+
+        if (target == "settings" || target == "android settings" || target == "phone settings") {
+            return try {
+                context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                messages.add(ChatMessage(input, false))
+                message = ""
+                showLocalMemoryReply("Opening Settings.")
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        val appInfo = when {
+            target.contains("youtube") -> Triple("YouTube", "com.google.android.youtube", "https://www.youtube.com")
+            target.contains("chrome") || target.contains("google chrome") -> Triple("Chrome", "com.android.chrome", "https://www.google.com")
+            target.contains("gmail") || target.contains("email") -> Triple("Gmail", "com.google.android.gm", "mailto:")
+            target.contains("maps") || target.contains("google maps") -> Triple("Maps", "com.google.android.apps.maps", "geo:0,0?q=maps")
+            target.contains("play store") || target.contains("google play") -> Triple("Play Store", "com.android.vending", "https://play.google.com/store")
+            else -> null
+        } ?: return false
+
+        return try {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.second)
+            if (launchIntent != null) {
+                context.startActivity(launchIntent)
+            } else {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(appInfo.third)))
+            }
+            messages.add(ChatMessage(input, false))
+            message = ""
+            showLocalMemoryReply("Opening ${appInfo.first}.")
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun sendText(textToSend: String) {
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
+
+        if (openAppCommand(text)) return
+
         val lower = text.lowercase(Locale.US)
         if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) || lower.matches(Regex("^what do you know about me[.!?]?$")) || lower.matches(Regex("^show my memories[.!?]?$"))) {
             messages.add(ChatMessage(text, false)); message = ""
@@ -254,7 +302,7 @@ fun LeauHomeScreen(
             LeauMemory.clearMemories(context)
             showLocalMemoryReply("Done. I've forgotten all of the memories I had saved about you."); return
         }
-        val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$").find(text)
+        val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$`).find(text)
         if (forgetMatch != null) {
             messages.add(ChatMessage(text, false)); message = ""
             val target = forgetMatch.groupValues[1].trim()
@@ -327,37 +375,13 @@ fun LeauHomeScreen(
 @Composable
 private fun EyeAnimation(height: Float, width: Int, mode: String) {
     val animatedHeight = remember { Animatable(height) }
-    LaunchedEffect(mode) {
-        animatedHeight.snapTo(height)
-        when (mode) {
-            "blink" -> {
-                while (true) {
-                    delay(Random.nextLong(2500L, 5000L))
-                    animatedHeight.animateTo(8f, tween(90))
-                    animatedHeight.animateTo(height, tween(120))
-                }
-            }
-            "think" -> {
-                while (true) {
-                    animatedHeight.animateTo(190f, tween(350))
-                    delay(180L)
-                    animatedHeight.animateTo(height, tween(450))
-                    delay(180L)
-                }
-            }
-            "listen" -> {
-                while (true) {
-                    animatedHeight.animateTo(205f, tween(500))
-                    animatedHeight.animateTo(height, tween(500))
-                    delay(120L)
-                }
-            }
-            "speak" -> {
-                while (true) {
-                    animatedHeight.animateTo(200f, tween(180))
-                    animatedHeight.animateTo(height, tween(180))
-                    delay(80L)
-                }
+    LaunchedEffect(Unit) {
+        while (true) {
+            when (mode) {
+                "blink" -> { delay(Random.nextLong(2500L, 5000L)); animatedHeight.animateTo(8f, tween(90)); animatedHeight.animateTo(height, tween(120)) }
+                "think" -> { animatedHeight.animateTo(190f, tween(350)); animatedHeight.animateTo(height, tween(450)); delay(180L) }
+                "listen" -> { animatedHeight.animateTo(205f, tween(500)); animatedHeight.animateTo(height, tween(500)); delay(120L) }
+                else -> { animatedHeight.animateTo(200f, tween(180)); animatedHeight.animateTo(height, tween(180)); delay(80L) }
             }
         }
     }
