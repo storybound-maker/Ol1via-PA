@@ -213,7 +213,7 @@ private fun LeauApp(isListening: Boolean, isSpeaking: Boolean, initialMessage: S
                 LeauChat(messages, isListening, thinking, isSpeaking, initialMessage, { page = LeauPage.HOME }, ::send, startListening) { hub = true }
             }
         }
-        if (hub) HubSheet({ hub = false }) { hub = false; runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) } }
+        if (hub) HubSheet(onDismiss = { hub = false }, onSettings = { hub = false; runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) } })
         if (connect) ConnectDialog { connect = false }
     }
 }
@@ -223,13 +223,13 @@ private fun LeauHome(listening: Boolean, speaking: Boolean, onLeau: () -> Unit, 
     val mode = when { listening -> LeauMode.LISTENING; speaking -> LeauMode.SPEAKING; else -> LeauMode.IDLE }
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.fillMaxWidth().padding(top = 34.dp), contentAlignment = Alignment.Center) {
-            Text("Leau", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(text = "Leau", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             IconButton(onClick = onHub, modifier = Modifier.align(Alignment.CenterEnd).size(42.dp)) {
                 Icon(imageVector = Icons.Outlined.Eco, contentDescription = "Hub", modifier = Modifier.size(25.dp), tint = LeauGreen)
             }
         }
         Spacer(Modifier.height(18.dp))
-        Text(if (mode == LeauMode.IDLE) "Tap to speak" else if (mode == LeauMode.LISTENING) "Listening…" else "Leau is speaking…", color = if (mode == LeauMode.LISTENING) LeauGreen else LeauMuted, style = MaterialTheme.typography.bodyMedium)
+        Text(text = if (mode == LeauMode.IDLE) "Tap to speak" else if (mode == LeauMode.LISTENING) "Listening…" else "Leau is speaking…", color = if (mode == LeauMode.LISTENING) LeauGreen else LeauMuted, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(18.dp))
         LeauEyes(mode, onLeau)
         Spacer(Modifier.height(18.dp))
@@ -251,12 +251,7 @@ private fun LeauEyes(mode: LeauMode, onClick: () -> Unit) {
     Box(Modifier.size(238.dp).scale(scale), contentAlignment = Alignment.Center) {
         Surface(onClick = onClick, modifier = Modifier.size(212.dp).alpha(if (mode == LeauMode.LISTENING) .86f + .14f * pulse else 1f), shape = RoundedCornerShape(48.dp), color = LeauCard, border = BorderStroke(1.dp, if (mode == LeauMode.LISTENING) LeauGreen else Color(0xFF1C3930))) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(R.drawable.leau_eyes),
-                    contentDescription = "Leau",
-                    modifier = Modifier.size(150.dp).offset(y = y.dp),
-                    contentScale = ContentScale.Fit
-                )
+                Image(painter = painterResource(R.drawable.leau_eyes), contentDescription = "Leau", modifier = Modifier.size(150.dp).offset(y = y.dp), contentScale = ContentScale.Fit)
             }
         }
     }
@@ -268,13 +263,7 @@ private fun VoiceLeauButton(onClick: () -> Unit, listening: Boolean) {
     val y by transition.animateFloat(-3f, 3f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "voiceHover")
     val scale by transition.animateFloat(.94f, 1.04f, infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "voiceBreathe")
     val alpha by transition.animateFloat(.78f, 1f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "voicePulse")
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(62.dp).scale(scale).offset(y = y.dp).alpha(if (listening) alpha else 1f),
-        shape = RoundedCornerShape(31.dp),
-        color = if (listening) LeauGreen.copy(alpha = .18f) else Color.Transparent,
-        border = BorderStroke(1.dp, if (listening) LeauGreen else Color(0xFF31584A))
-    ) {
+    Surface(onClick = onClick, modifier = Modifier.size(62.dp).scale(scale).offset(y = y.dp).alpha(if (listening) alpha else 1f), shape = RoundedCornerShape(31.dp), color = if (listening) LeauGreen.copy(alpha = .18f) else Color.Transparent, border = BorderStroke(1.dp, if (listening) LeauGreen else Color(0xFF31584A))) {
         Box(Modifier.fillMaxSize().padding(9.dp), contentAlignment = Alignment.Center) {
             Image(painter = painterResource(R.drawable.leau_eyes), contentDescription = "Speak with Leau", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         }
@@ -294,7 +283,7 @@ private fun SmallButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 private fun MessagePill(onClick: () -> Unit) {
     Surface(onClick = onClick, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(29.dp), color = LeauCard2, border = BorderStroke(1.dp, Color(0xFF31584A))) {
         Row(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Ask Leau anything…", color = LeauMuted, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Text(text = "Ask Leau anything…", color = LeauMuted, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Icon(imageVector = Icons.Outlined.Send, contentDescription = "Type a message", modifier = Modifier.size(20.dp), tint = LeauGreen)
         }
     }
@@ -304,16 +293,17 @@ private fun MessagePill(onClick: () -> Unit) {
 private fun LeauChat(messages: List<ChatMessage>, listening: Boolean, thinking: Boolean, speaking: Boolean, initial: String, onBack: () -> Unit, onSend: (String) -> Unit, onVoice: () -> Unit, onHub: () -> Unit) {
     var input by remember { mutableStateOf(TextFieldValue(initial)) }
     var drag by remember { mutableFloatStateOf(0f) }
-    val list = rememberLazyListState(); val keyboard = LocalSoftwareKeyboardController.current
+    val list = rememberLazyListState()
+    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) list.animateScrollToItem(messages.lastIndex) }
     LaunchedEffect(initial) { if (initial.isNotBlank()) input = TextFieldValue(initial) }
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Color.White) }
-            Text("Leau", Color.White, MaterialTheme.typography.titleLarge, FontWeight.SemiBold, Modifier.weight(1f))
-            IconButton(onHub) { Icon(Icons.Outlined.Eco, "Hub", tint = LeauGreen) }
+            IconButton(onClick = onBack) { Icon(imageVector = Icons.Outlined.ArrowBack, contentDescription = "Back", modifier = Modifier, tint = Color.White) }
+            Text(text = "Leau", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onHub) { Icon(imageVector = Icons.Outlined.Eco, contentDescription = "Hub", modifier = Modifier, tint = LeauGreen) }
         }
-        Text(when { listening -> "Listening…"; thinking -> "Thinking…"; speaking -> "Speaking…"; else -> "" }, color = LeauGreen, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
+        Text(text = when { listening -> "Listening…"; thinking -> "Thinking…"; speaking -> "Speaking…"; else -> "" }, color = LeauGreen, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
         LazyColumn(state = list, modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
             items(messages) { ChatBubble(it) }
             if (thinking) item { ChatBubble(ChatMessage("Thinking…", true)) }
@@ -324,10 +314,10 @@ private fun LeauChat(messages: List<ChatMessage>, listening: Boolean, thinking: 
                     if (drag > 90f && input.text.isNotBlank()) { val text = input.text; input = TextFieldValue(""); keyboard?.hide(); onSend(text) }; drag = 0f
                 }, onDragCancel = { drag = 0f })
             }, shape = RoundedCornerShape(29.dp), color = LeauCard2, border = BorderStroke(1.dp, if (drag > 20) LeauGreen else Color(0xFF31584A))) {
-                androidx.compose.foundation.text.BasicTextField(value = input, onValueChange = { input = it }, singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White), modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 18.dp), decorationBox = { inner -> if (input.text.isEmpty()) Text("Ask Leau anything…", color = LeauMuted, style = MaterialTheme.typography.bodyLarge); inner() })
+                androidx.compose.foundation.text.BasicTextField(value = input, onValueChange = { input = it }, singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White), modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 18.dp), decorationBox = { inner -> if (input.text.isEmpty()) Text(text = "Ask Leau anything…", color = LeauMuted, style = MaterialTheme.typography.bodyLarge); inner() })
             }
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = { if (input.text.isNotBlank()) { val text = input.text; input = TextFieldValue(""); keyboard?.hide(); onSend(text) } else onVoice() }, modifier = Modifier.size(52.dp).background(LeauGreen, RoundedCornerShape(26.dp))) { Icon(Icons.Outlined.Send, "Send", tint = Color(0xFF07100D), Modifier.size(20.dp)) }
+            IconButton(onClick = { if (input.text.isNotBlank()) { val text = input.text; input = TextFieldValue(""); keyboard?.hide(); onSend(text) } else onVoice() }, modifier = Modifier.size(52.dp).background(LeauGreen, RoundedCornerShape(26.dp))) { Icon(imageVector = Icons.Outlined.Send, contentDescription = "Send", modifier = Modifier.size(20.dp), tint = Color(0xFF07100D)) }
         }
     }
 }
@@ -336,7 +326,7 @@ private fun LeauChat(messages: List<ChatMessage>, listening: Boolean, thinking: 
 private fun ChatBubble(message: ChatMessage) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromLeau) Arrangement.Start else Arrangement.End) {
         Surface(color = if (message.fromLeau) LeauCard2 else LeauGreen, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth(.82f)) {
-            Text(message.text, color = if (message.fromLeau) Color(0xFFE8F7F0) else Color(0xFF07100D), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(15.dp))
+            Text(text = message.text, color = if (message.fromLeau) Color(0xFFE8F7F0) else Color(0xFF07100D), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(15.dp))
         }
     }
 }
@@ -346,10 +336,21 @@ private fun HubSheet(onDismiss: () -> Unit, onSettings: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).padding(18.dp), contentAlignment = Alignment.TopEnd) {
         Surface(shape = RoundedCornerShape(28.dp), color = LeauCard, border = BorderStroke(1.dp, Color(0xFF31584A)), modifier = Modifier.width(300.dp)) {
             Column(Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Eco, null, tint = LeauGreen, Modifier.size(22.dp)); Spacer(Modifier.width(8.dp)); Text("Leau", color = Color.White, style = MaterialTheme.typography.titleLarge) }
-                Spacer(Modifier.height(8.dp)); Text("Your control space", color = LeauMuted); Spacer(Modifier.height(18.dp))
-                OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) { Icon(Icons.Outlined.Settings, null, tint = LeauGreen); Spacer(Modifier.width(8.dp)); Text("Settings", color = Color.White) }
-                Spacer(Modifier.height(8.dp)); TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Close", color = LeauGreen) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Outlined.Eco, contentDescription = null, modifier = Modifier.size(22.dp), tint = LeauGreen)
+                    Spacer(Modifier.width(8.dp))
+                    Text(text = "Leau", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(text = "Your control space", color = LeauMuted)
+                Spacer(Modifier.height(18.dp))
+                OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                    Icon(imageVector = Icons.Outlined.Settings, contentDescription = null, modifier = Modifier, tint = LeauGreen)
+                    Spacer(Modifier.width(8.dp))
+                    Text(text = "Settings", color = Color.White)
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(text = "Close", color = LeauGreen) }
             }
         }
     }
@@ -357,5 +358,5 @@ private fun HubSheet(onDismiss: () -> Unit, onSettings: () -> Unit) {
 
 @Composable
 private fun ConnectDialog(onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, containerColor = LeauCard, title = { Text("Connect", color = Color.White) }, text = { Text("Connect Leau to services and devices as integrations are added. Connect is for external capabilities, not chat history.", color = LeauMuted) }, confirmButton = { Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LeauGreen, contentColor = Color(0xFF07100D))) { Text("Done") } })
+    AlertDialog(onDismissRequest = onDismiss, containerColor = LeauCard, title = { Text(text = "Connect", color = Color.White) }, text = { Text(text = "Connect Leau to services and devices as integrations are added. Connect is for external capabilities, not chat history.", color = LeauMuted) }, confirmButton = { Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LeauGreen, contentColor = Color(0xFF07100D))) { Text(text = "Done") } })
 }
