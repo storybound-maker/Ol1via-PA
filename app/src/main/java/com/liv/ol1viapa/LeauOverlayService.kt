@@ -18,10 +18,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.app.NotificationChannelCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
-import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
 import android.app.NotificationChannel
@@ -60,7 +57,11 @@ class LeauOverlayService : Service() {
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
-        if (Build.VERSION.SDK_INT >= 34) ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= 34) {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotificationChannel() {
@@ -124,8 +125,7 @@ class LeauOverlayService : Service() {
                         if (now - lastTap <= TAP_WINDOW) {
                             singleTapRunnable?.let(handler::removeCallbacks)
                             lastTap = 0L
-                            val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            startActivity(intent)
+                            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                         } else {
                             lastTap = now
                             singleTapRunnable = Runnable { showPill(); lastTap = 0L }
@@ -171,67 +171,68 @@ class LeauOverlayService : Service() {
             setColorFilter(0xFF76E8D0.toInt())
             background = roundedBackground(0x331B4A40.toInt(), 22)
             contentDescription = "Send"
-            setOnClickListener { sendOverlayMessage(input, root) }
         }
         root.addView(send, LinearLayout.LayoutParams(dp(42), dp(42)))
         val params = baseParams(dp(360), dp(64), true).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(90) }
-        root.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                val loc = IntArray(2); root.getLocationOnScreen(loc)
-                val inside = event.rawX >= loc[0] && event.rawX <= loc[0] + root.width && event.rawY >= loc[1] && event.rawY <= loc[1] + root.height
-                if (!inside) { hideKeyboard(input); showBubble(); true } else false
-            } else false
-        }
         pill = root
         runCatching { windowManager.addView(root, params) }
         send.setOnClickListener { sendOverlayMessage(input, root) }
         input.setOnEditorActionListener { _, _, _ -> sendOverlayMessage(input, root); true }
         input.requestFocus()
-        handler.postDelayed { runCatching { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) } }, 150)
+        handler.postDelayed(Runnable {
+            runCatching {
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }, 150L)
         updateLiveActivity()
     }
 
     private fun sendOverlayMessage(input: EditText, root: LinearLayout) {
-        val text = input.text.toString().trim(); if (text.isEmpty()) return
+        val text = input.text.toString().trim()
+        if (text.isEmpty()) return
         input.setText("")
         val label = pomodoroLabel ?: return
         label.text = "Thinking…"
         val history = mutableListOf<JSONObject>()
         LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
         LeauApi.sendMessage(text, history) { result ->
-            handler.post { result.onSuccess { reply -> label.text = reply.take(24) } .onFailure { label.text = "Try again" }; updateLiveActivity() }
+            handler.post {
+                result.onSuccess { reply -> label.text = reply.take(24) }
+                    .onFailure { label.text = "Try again" }
+                updateLiveActivity()
+            }
         }
     }
 
     private fun updateLiveActivity() {
         if (pill == null) return
+        pomodoroRunnable?.let(handler::removeCallbacks)
         if (LeauPomodoro.isRunning(this)) {
-            pomodoroRunnable?.let(handler::removeCallbacks)
             val tick = object : Runnable {
                 override fun run() {
                     if (pill == null) return
                     if (LeauPomodoro.isRunning(this@LeauOverlayService)) {
                         pomodoroLabel?.text = "${LeauPomodoro.label(this@LeauOverlayService)}  ${LeauPomodoro.formatRemaining(LeauPomodoro.endAt(this@LeauOverlayService))}"
-                        handler.postDelayed(this, 1000)
+                        handler.postDelayed(this, 1000L)
                     } else {
                         pomodoroLabel?.text = "✓ Focus complete"
+                        pomodoroRunnable = null
                     }
                 }
             }
             pomodoroRunnable = tick
             handler.post(tick)
-        } else if (pomodoroLabel?.text?.contains(":") == true) {
+        } else {
             pomodoroLabel?.text = "LEAU"
         }
     }
 
     private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
-
     private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
     private fun dp(value: Int): Int = (value.toFloat() * resources.displayMetrics.density).roundToInt()
     private fun hideKeyboard(input: EditText) { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0) }
     private fun removeBubble() { bubble?.let { runCatching { windowManager.removeView(it) } }; bubble = null; bubbleParams = null }
-    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pomodoroLabel = null }
+    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pomodoroLabel = null; pomodoroRunnable?.let(handler::removeCallbacks); pomodoroRunnable = null }
     private fun hideAll() { removePill(); removeBubble() }
 
     override fun onDestroy() {
