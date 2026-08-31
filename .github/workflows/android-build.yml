@@ -2,7 +2,7 @@ name: Android build
 
 on:
   push:
-    branches: ["feature/leau-floating-ui"]
+    branches: ["rebrand/ol1via-pa"]
   workflow_dispatch:
 
 jobs:
