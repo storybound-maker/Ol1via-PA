@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.widget.Toast
@@ -68,19 +70,8 @@ class MainActivity : ComponentActivity() {
     private var isListening by mutableStateOf(false)
     private var isSpeaking by mutableStateOf(false)
     private var textToSpeech: TextToSpeech? = null
+    private var speechRecognizer: SpeechRecognizer? = null
     private var sendRecognizedMessage: ((String) -> Unit)? = null
-
-    private val speechLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        isListening = false
-        if (result.resultCode == RESULT_OK) {
-            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val recognized = matches?.firstOrNull()?.trim().orEmpty()
-            if (recognized.isNotEmpty()) {
-                recognizedText = recognized
-                sendRecognizedMessage?.invoke(recognized)
-            }
-        }
-    }
 
     private val microphonePermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startSpeechRecognition()
@@ -100,6 +91,7 @@ class MainActivity : ComponentActivity() {
                 })
             }
         }
+        setupSpeechRecognizer()
         enableEdgeToEdge()
         setContent {
             LeauPATheme {
@@ -115,16 +107,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun speak(text: String) {
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "leau_reply")
-    }
-
-    override fun onDestroy() {
-        sendRecognizedMessage = null
-        textToSpeech?.stop()
-        textToSpeech?.shutdown()
-        textToSpeech = null
-        super.onDestroy()
+    private fun setupSpeechRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) return
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+            setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) { runOnUiThread { isListening = true } }
+                override fun onBeginningOfSpeech() { runOnUiThread { isListening = true } }
+                override fun onRmsChanged(rmsdB: Float) = Unit
+                override fun onBufferReceived(buffer: ByteArray?) = Unit
+                override fun onEndOfSpeech() { runOnUiThread { isListening = false } }
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    if (partial.isNotBlank()) runOnUiThread { recognizedText = partial }
+                }
+                override fun onResults(results: Bundle?) {
+                    val recognized = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    runOnUiThread {
+                        isListening = false
+                        if (recognized.isNotEmpty()) {
+                            recognizedText = recognized
+                            sendRecognizedMessage?.invoke(recognized)
+                        }
+                    }
+                }
+                override fun onError(error: Int) {
+                    runOnUiThread {
+                        isListening = false
+                        if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                            Toast.makeText(this@MainActivity, "I couldn't understand that. Try again.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                override fun onEvent(eventType: Int, params: Bundle?) = Unit
+            })
+        }
     }
 
     private fun startListening() {
@@ -133,14 +149,33 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSpeechRecognition() {
+        if (speechRecognizer == null) setupSpeechRecognizer()
+        val recognizer = speechRecognizer ?: return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Leau")
         }
-        if (intent.resolveActivity(packageManager) != null) {
-            isListening = true
-            speechLauncher.launch(intent)
-        }
+        recognizedText = ""
+        isListening = true
+        recognizer.startListening(intent)
+    }
+
+    private fun speak(text: String) {
+        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "leau_reply")
+    }
+
+    override fun onDestroy() {
+        sendRecognizedMessage = null
+        speechRecognizer?.cancel()
+        speechRecognizer?.destroy()
+        speechRecognizer = null
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        super.onDestroy()
     }
 }
 
@@ -157,6 +192,10 @@ fun LeauHomeScreen(
     var isThinking by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val context = LocalContext.current
+
+    LaunchedEffect(initialMessage) {
+        if (initialMessage.isNotEmpty()) message = initialMessage
+    }
 
     fun buildHistory(): List<JSONObject> {
         val history = mutableListOf<JSONObject>()
