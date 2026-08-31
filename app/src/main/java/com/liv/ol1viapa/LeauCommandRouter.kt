@@ -12,8 +12,8 @@ object LeauCommandRouter {
         val match = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(?:the\\s+)?(.+?)(?:[.!?])?$").find(text)
             ?: return false
         val requested = normalize(match.groupValues[1])
+        if (requested.isBlank()) return false
 
-        // Android system destinations that are not ordinary launcher apps.
         when (requested) {
             "settings", "android settings", "phone settings", "system settings" ->
                 return launchIntent(context, Intent(Settings.ACTION_SETTINGS))
@@ -46,20 +46,12 @@ object LeauCommandRouter {
             "playstore" to "com.android.vending"
         )
 
-        val packageName = aliases.entries.firstOrNull { requested == it.key || requested.startsWith("${it.key} ") }?.value
+        val packageName = aliases.entries.firstOrNull { requested == it.key }?.value
             ?: findInstalledLauncherPackage(context, requested)
             ?: return false
 
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
-        if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            return runCatching {
-                context.startActivity(launchIntent)
-                true
-            }.getOrDefault(false)
-        }
+        if (launchPackage(context, packageName)) return true
 
-        // Play Store can sometimes expose no normal launcher intent; use its store URL.
         if (packageName == "com.android.vending") {
             return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("market://home"))) ||
                 launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store")))
@@ -74,35 +66,78 @@ object LeauCommandRouter {
 
     private fun findInstalledLauncherPackage(context: Context, requested: String): String? {
         val pm = context.packageManager
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val candidates = pm.queryIntentActivities(launcherIntent, 0)
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
 
-        return candidates
+        return pm.queryIntentActivities(launcherIntent, 0)
+            .asSequence()
             .map { info ->
                 val label = normalize(info.loadLabel(pm).toString())
-                Triple(label, info.activityInfo.packageName, similarity(label, requested))
+                val packageName = info.activityInfo.packageName
+                val score = appMatchScore(label, requested)
+                Triple(label, packageName, score)
             }
-            .filter { (label, _, score) -> label == requested || label.startsWith(requested) || score >= 0.86 }
+            .filter { (label, _, score) ->
+                label == requested ||
+                    label.startsWith(requested) ||
+                    requested.startsWith(label) ||
+                    score >= 0.70
+            }
             .maxByOrNull { it.third }
             ?.second
     }
 
-    private fun similarity(a: String, b: String): Double {
-        if (a == b) return 1.0
-        if (a.contains(b) || b.contains(a)) return 0.95
-        val aWords = a.split(' ').filter(String::isNotBlank).toSet()
-        val bWords = b.split(' ').filter(String::isNotBlank).toSet()
-        if (aWords.isEmpty() || bWords.isEmpty()) return 0.0
-        val intersection = aWords.intersect(bWords).size.toDouble()
-        return (2.0 * intersection) / (aWords.size + bWords.size)
+    private fun appMatchScore(label: String, requested: String): Double {
+        if (label == requested) return 1.0
+        if (label.startsWith(requested) || requested.startsWith(label)) return 0.94
+
+        val labelWords = label.split(' ').filter(String::isNotBlank).toSet()
+        val requestedWords = requested.split(' ').filter(String::isNotBlank).toSet()
+        if (labelWords.isEmpty() || requestedWords.isEmpty()) return 0.0
+
+        val intersection = labelWords.intersect(requestedWords).size.toDouble()
+        val union = labelWords.union(requestedWords).size.toDouble()
+        val jaccard = if (union == 0.0) 0.0 else intersection / union
+
+        return maxOf(jaccard, characterSimilarity(label, requested))
     }
 
-    private fun normalize(value: String): String = value
-        .lowercase(Locale.US)
-        .replace("’", "'")
-        .replace(Regex("\\bapp\\b"), "")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    private fun characterSimilarity(a: String, b: String): Double {
+        if (a.isEmpty() || b.isEmpty()) return 0.0
+        val distance = levenshteinDistance(a, b)
+        return 1.0 - (distance.toDouble() / maxOf(a.length, b.length))
+    }
+
+    private fun levenshteinDistance(a: String, b: String): Int {
+        val previous = IntArray(b.length + 1) { it }
+        var current = IntArray(b.length + 1)
+
+        for (i in a.indices) {
+            current[0] = i + 1
+            for (j in b.indices) {
+                val cost = if (a[i] == b[j]) 0 else 1
+                current[j + 1] = minOf(
+                    current[j] + 1,
+                    previous[j + 1] + 1,
+                    previous[j] + cost
+                )
+            }
+            val swap = previous
+            for (j in current.indices) swap[j] = current[j]
+            current = swap
+        }
+        return previous[b.length]
+    }
+
+    private fun launchPackage(context: Context, packageName: String): Boolean {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
 
     private fun launchIntent(context: Context, intent: Intent): Boolean = runCatching {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -110,4 +145,12 @@ object LeauCommandRouter {
         context.startActivity(intent)
         true
     }.getOrDefault(false)
+
+    private fun normalize(value: String): String = value
+        .lowercase(Locale.US)
+        .replace("’", "'")
+        .replace(Regex("\\bapp\\b"), "")
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 }
