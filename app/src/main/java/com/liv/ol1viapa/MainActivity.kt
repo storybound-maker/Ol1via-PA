@@ -198,7 +198,7 @@ fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boo
             val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
                 putExtra(AlarmClock.EXTRA_LENGTH, seconds)
                 putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer")
-                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             }
             if (intent.resolveActivity(context.packageManager) == null) return false
             context.startActivity(intent)
