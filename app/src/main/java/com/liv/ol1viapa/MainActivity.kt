@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.AlarmClock
+import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -148,6 +150,14 @@ fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boo
         if (target == "settings" || target == "android settings" || target == "phone settings") {
             return try { context.startActivity(Intent(Settings.ACTION_SETTINGS)); messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening Settings."); true } catch (_: Exception) { false }
         }
+        if (target == "camera" || target == "my camera" || target == "the camera") {
+            return try {
+                val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                if (cameraIntent.resolveActivity(context.packageManager) == null) return false
+                context.startActivity(cameraIntent)
+                messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening the camera."); true
+            } catch (_: Exception) { false }
+        }
         val app = when {
             target.contains("youtube") -> Triple("YouTube", "com.google.android.youtube", "https://www.youtube.com")
             target.contains("chrome") -> Triple("Chrome", "com.android.chrome", "https://www.google.com")
@@ -163,10 +173,72 @@ fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boo
         } catch (_: Exception) { false }
     }
 
+    fun setTimerCommand(input: String): Boolean {
+        val lower = input.lowercase(Locale.US).trim()
+        val match = Regex("^(set|start) (?:a )?timer (?:for )?(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
+        val amount = match.groupValues[2].toIntOrNull() ?: return false
+        if (amount <= 0) return false
+        val unit = match.groupValues[3].lowercase(Locale.US)
+        val seconds = when {
+            unit.startsWith("second") -> amount
+            unit.startsWith("minute") -> amount * 60
+            else -> amount * 60 * 60
+        }
+        return try {
+            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer")
+                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            }
+            if (intent.resolveActivity(context.packageManager) == null) return false
+            context.startActivity(intent)
+            messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Setting a ${amount} ${unit} timer."); true
+        } catch (_: Exception) { false }
+    }
+
+    fun setAlarmCommand(input: String): Boolean {
+        val lower = input.lowercase(Locale.US).trim()
+        val match = Regex("^(set|create|make) (?:an )?alarm (?:for )?(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
+        var hour = match.groupValues[2].toIntOrNull() ?: return false
+        val minute = match.groupValues[3].toIntOrNull() ?: 0
+        val meridiem = match.groupValues[4].lowercase(Locale.US)
+        if (minute !in 0..59) return false
+        if (meridiem == "am" || meridiem == "pm") {
+            if (hour !in 1..12) return false
+            if (meridiem == "am" && hour == 12) hour = 0
+            if (meridiem == "pm" && hour != 12) hour += 12
+        } else if (hour !in 0..23) {
+            return false
+        }
+        return try {
+            val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                putExtra(AlarmClock.EXTRA_HOUR, hour)
+                putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                putExtra(AlarmClock.EXTRA_MESSAGE, "Leau alarm")
+                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            }
+            if (intent.resolveActivity(context.packageManager) == null) return false
+            context.startActivity(intent)
+            messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Setting your alarm for ${formatAlarmTime(hour, minute)}."); true
+        } catch (_: Exception) { false }
+    }
+
+    fun formatAlarmTime(hour: Int, minute: Int): String {
+        val displayHour = when {
+            hour == 0 -> 12
+            hour > 12 -> hour - 12
+            else -> hour
+        }
+        val suffix = if (hour < 12) "AM" else "PM"
+        return String.format(Locale.US, "%d:%02d %s", displayHour, minute, suffix)
+    }
+
     fun sendText(textToSend: String) {
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
         if (openAppCommand(text)) return
+        if (setTimerCommand(text)) return
+        if (setAlarmCommand(text)) return
         val lower = text.lowercase(Locale.US)
         if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) || lower.matches(Regex("^what do you know about me[.!?]?$")) || lower.matches(Regex("^show my memories[.!?]?$"))) {
             messages.add(ChatMessage(text, false)); message = ""
