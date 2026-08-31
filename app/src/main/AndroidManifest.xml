@@ -55,6 +55,7 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="persistent floating personal assistant overlay" />
         </service>
         <service android:name=".LeauScreenRecordService" android:exported="false" android:foregroundServiceType="mediaProjection|microphone" />
+        <service android:name=".LeauScreenshotService" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <service android:name=".LeauTimerAlertService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="timer completion alert overlay" />
         </service>
