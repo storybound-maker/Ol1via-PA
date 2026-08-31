@@ -107,6 +107,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun normalizeVoiceInput(input: String): String {
+        val cleaned = input.trim().replace(Regex("\\s+"), " ")
+        val lower = cleaned.lowercase(Locale.US)
+
+        return when (lower) {
+            "hey you", "hey u", "hi you", "hi u", "hello you", "hello u",
+            "hey leo", "hi leo", "hello leo",
+            "hey leu", "hi leu", "hello leu",
+            "hey layou", "hi layou", "hello layou",
+            "hey liu", "hi liu", "hello liu" -> {
+                cleaned.replaceFirst(Regex("(?i)^(hey|hi|hello)\\b.*$"), "$1 Leau")
+            }
+            else -> cleaned
+        }
+    }
+
     private fun setupSpeechRecognizer() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) return
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
@@ -121,7 +137,8 @@ class MainActivity : ComponentActivity() {
                     if (partial.isNotBlank()) runOnUiThread { recognizedText = partial }
                 }
                 override fun onResults(results: Bundle?) {
-                    val recognized = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    val rawRecognized = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    val recognized = normalizeVoiceInput(rawRecognized)
                     runOnUiThread {
                         isListening = false
                         if (recognized.isNotEmpty()) {
