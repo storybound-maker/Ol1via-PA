@@ -25,6 +25,7 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 class LeauOverlayService : Service() {
     companion object {
@@ -45,7 +46,6 @@ class LeauOverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
-
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Leau is ready")
@@ -53,18 +53,11 @@ class LeauOverlayService : Service() {
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
-
         if (Build.VERSION.SDK_INT >= 34) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-
         handler.postDelayed({
             if (!Settings.canDrawOverlays(this)) requestOverlayPermissionOnce()
         }, 700)
@@ -72,15 +65,10 @@ class LeauOverlayService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Leau Floating Assistant",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
+            val channel = NotificationChannel(CHANNEL_ID, "Leau Floating Assistant", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Keeps Leau's floating assistant available."
             }
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
@@ -97,27 +85,15 @@ class LeauOverlayService : Service() {
         if (prefs.getBoolean("permission_prompted", false)) return
         prefs.edit().putBoolean("permission_prompted", true).apply()
         runCatching {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    android.net.Uri.parse("package:$packageName")
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 
     private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
-    private fun baseParams(
-        width: Int,
-        height: Int,
-        focusable: Boolean
-    ): WindowManager.LayoutParams = WindowManager.LayoutParams(
-        width,
-        height,
-        overlayType(),
-        if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-        else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+    private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams = WindowManager.LayoutParams(
+        width, height, overlayType(),
+        if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
         android.graphics.PixelFormat.TRANSLUCENT
     ).apply {
         gravity = Gravity.TOP or Gravity.START
@@ -129,7 +105,6 @@ class LeauOverlayService : Service() {
         if (!Settings.canDrawOverlays(this)) return
         removeChat()
         if (bubble != null) return
-
         val size = dp(68)
         val view = ImageView(this).apply {
             setImageResource(R.drawable.leau_eyes)
@@ -139,39 +114,26 @@ class LeauOverlayService : Service() {
             elevation = dp(10).toFloat()
             contentDescription = "Open Leau"
         }
-
         val params = baseParams(size, size, false).apply {
             gravity = Gravity.TOP or Gravity.END
             x = dp(14)
             y = dp(180)
         }
-
         installDragAndClick(view, params)
         bubble = view
         bubbleParams = params
         runCatching { windowManager.addView(view, params) }
     }
 
-    private fun installDragAndClick(
-        view: View,
-        params: WindowManager.LayoutParams
-    ) {
+    private fun installDragAndClick(view: View, params: WindowManager.LayoutParams) {
         var downX = 0f
         var downY = 0f
         var startX = 0
         var startY = 0
         var moved = false
-
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.rawX
-                    downY = event.rawY
-                    startX = params.x
-                    startY = params.y
-                    moved = false
-                    true
-                }
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; moved = false; true }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - downX).toInt()
                     val dy = (event.rawY - downY).toInt()
@@ -181,10 +143,7 @@ class LeauOverlayService : Service() {
                     runCatching { windowManager.updateViewLayout(view, params) }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (!moved) showChat()
-                    true
-                }
+                MotionEvent.ACTION_UP -> { if (!moved) showChat(); true }
                 else -> true
             }
         }
@@ -194,37 +153,18 @@ class LeauOverlayService : Service() {
         if (!Settings.canDrawOverlays(this)) return
         removeBubble()
         if (chatPanel != null) return
-
         val root = android.widget.FrameLayout(this)
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = roundedBackground(0xFF0C1714.toInt(), 28f).apply {
-                setStroke(dp(1), 0xFF69F0C4.toInt())
-            }
+            background = roundedBackground(0xFF0C1714.toInt(), 28f).apply { setStroke(dp(1), 0xFF69F0C4.toInt()) }
             elevation = dp(18).toFloat()
         }
-
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val eyes = ImageView(this).apply {
-            setImageResource(R.drawable.leau_eyes)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-        }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val eyes = ImageView(this).apply { setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE }
         header.addView(eyes, LinearLayout.LayoutParams(dp(54), dp(38)))
-
-        val title = TextView(this).apply {
-            text = "Leau"
-            setTextColor(Color.WHITE)
-            textSize = 20f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding(dp(6), 0, 0, 0)
-        }
+        val title = TextView(this).apply { text = "Leau"; setTextColor(Color.WHITE); textSize = 20f; typeface = android.graphics.Typeface.DEFAULT_BOLD; setPadding(dp(6), 0, 0, 0) }
         header.addView(title, LinearLayout.LayoutParams(0, dp(44), 1f))
-
         val close = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
             setColorFilter(Color.WHITE)
@@ -234,24 +174,11 @@ class LeauOverlayService : Service() {
         }
         header.addView(close, LinearLayout.LayoutParams(dp(42), dp(42)))
         card.addView(header)
-
-        val scroll = ScrollView(this).apply {
-            setFillViewport(true)
-            setPadding(0, dp(8), 0, dp(8))
-        }
-
-        val messages = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
-        }
+        val scroll = ScrollView(this).apply { setFillViewport(true); setPadding(0, dp(8), 0, dp(8)) }
+        val messages = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
         scroll.addView(messages)
         card.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val inputRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
+        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val input = EditText(this).apply {
             hint = "Ask Leau..."
             setHintTextColor(0xFF89A89D.toInt())
@@ -261,126 +188,61 @@ class LeauOverlayService : Service() {
             setPadding(dp(14), 0, dp(12), 0)
             background = roundedBackground(0xFF14251F.toInt(), 22f)
         }
-
         val send = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_send)
             setColorFilter(0xFFB8FF5A.toInt())
             background = roundedBackground(0xFF14251F.toInt(), 22f)
             contentDescription = "Send"
         }
-
-        inputRow.addView(input, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-            marginEnd = dp(8)
-        })
+        inputRow.addView(input, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(8) })
         inputRow.addView(send, LinearLayout.LayoutParams(dp(52), dp(52)))
         card.addView(inputRow)
-
-        val cardParams = android.widget.FrameLayout.LayoutParams(
-            dp(340),
-            dp(500),
-            Gravity.BOTTOM or Gravity.END
-        ).apply {
-            setMargins(dp(14), dp(18), dp(14), dp(18))
-        }
+        val cardParams = android.widget.FrameLayout.LayoutParams(dp(340), dp(500), Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(14), dp(18), dp(14), dp(18)) }
         root.addView(card, cardParams)
-
-        val params = baseParams(-1, -1, true).apply {
-            gravity = Gravity.TOP or Gravity.START
-            flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-        }
-
+        val params = baseParams(-1, -1, true).apply { gravity = Gravity.TOP or Gravity.START; flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN }
         root.setOnTouchListener { _, event ->
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 val location = IntArray(2)
                 card.getLocationOnScreen(location)
-                val inside = event.rawX >= location[0] &&
-                    event.rawX <= location[0] + card.width &&
-                    event.rawY >= location[1] &&
-                    event.rawY <= location[1] + card.height
-                if (!inside) {
-                    hideKeyboard(input)
-                    showBubble()
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+                val inside = event.rawX >= location[0] && event.rawX <= location[0] + card.width && event.rawY >= location[1] && event.rawY <= location[1] + card.height
+                if (!inside) { hideKeyboard(input); showBubble(); true } else false
+            } else false
         }
-
         var downX = 0f
         var downY = 0f
         var startLeft = 0
         var startTop = 0
         header.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.rawX
-                    downY = event.rawY
-                    val lp = card.layoutParams as android.widget.FrameLayout.LayoutParams
-                    startLeft = lp.leftMargin
-                    startTop = lp.topMargin
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val lp = card.layoutParams as android.widget.FrameLayout.LayoutParams
-                    lp.leftMargin = (startLeft + (event.rawX - downX)).toInt().coerceAtLeast(0)
-                    lp.topMargin = (startTop + (event.rawY - downY)).toInt().coerceAtLeast(0)
-                    card.layoutParams = lp
-                    true
-                }
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; val lp = card.layoutParams as android.widget.FrameLayout.LayoutParams; startLeft = lp.leftMargin; startTop = lp.topMargin; true }
+                MotionEvent.ACTION_MOVE -> { val lp = card.layoutParams as android.widget.FrameLayout.LayoutParams; lp.leftMargin = (startLeft + (event.rawX - downX)).toInt().coerceAtLeast(0); lp.topMargin = (startTop + (event.rawY - downY)).toInt().coerceAtLeast(0); card.layoutParams = lp; true }
                 else -> true
             }
         }
-
         chatPanel = root
         chatParams = params
         runCatching { windowManager.addView(root, params) }
-
         send.setOnClickListener { sendOverlayMessage(input, messages, scroll) }
-        input.setOnEditorActionListener { _, _, _ ->
-            sendOverlayMessage(input, messages, scroll)
-            true
-        }
+        input.setOnEditorActionListener { _, _, _ -> sendOverlayMessage(input, messages, scroll); true }
         input.requestFocus()
-        handler.postDelayed({
-            runCatching {
-                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-                    .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-            }
-        }, 180)
+        handler.postDelayed({ runCatching { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) } }, 180)
     }
 
-    private fun sendOverlayMessage(
-        input: EditText,
-        messages: LinearLayout,
-        scroll: ScrollView
-    ) {
+    private fun sendOverlayMessage(input: EditText, messages: LinearLayout, scroll: ScrollView) {
         val text = input.text.toString().trim()
         if (text.isEmpty()) return
         input.setText("")
         addMessage(messages, text, false)
         addMessage(messages, "Leau is thinking…", true)
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-
         val history = mutableListOf<JSONObject>()
         LeauMemory.buildMemoryHistoryMessage(this)?.let { history.add(it) }
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
                 if (chatPanel == null) return@post
                 val last = messages.getChildAt(messages.childCount - 1)
-                if (last is TextView && last.text.toString() == "Leau is thinking…") {
-                    messages.removeView(last)
-                }
-                result.onSuccess { reply -> addMessage(messages, reply, true) }
-                    .onFailure { error ->
-                        addMessage(
-                            messages,
-                            "I couldn't reach my AI brain. ${error.message ?: "Try again."}",
-                            true
-                        )
-                    }
+                if (last is TextView && last.text.toString() == "Leau is thinking…") messages.removeView(last)
+                result.onSuccess { reply -> addMessage(messages, reply, true) }.onFailure { error -> addMessage(messages, "I couldn't reach my AI brain. ${error.message ?: "Try again."}", true) }
                 scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
@@ -392,53 +254,25 @@ class LeauOverlayService : Service() {
             textSize = 14f
             setTextColor(if (fromLeau) 0xFFE9FFF5.toInt() else 0xFF07120E.toInt())
             setPadding(dp(14), dp(10), dp(14), dp(10))
-            background = roundedBackground(
-                if (fromLeau) 0xFF17332A.toInt() else 0xFFB8FF5A.toInt(),
-                18f
-            )
+            background = roundedBackground(if (fromLeau) 0xFF17332A.toInt() else 0xFFB8FF5A.toInt(), 18f)
         }
-
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = if (fromLeau) Gravity.START else Gravity.END
-        }
-
-        row.addView(bubble, LinearLayout.LayoutParams(dp(270), -2).apply {
-            setMargins(0, dp(4), 0, dp(4))
-        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = if (fromLeau) Gravity.START else Gravity.END }
+        row.addView(bubble, LinearLayout.LayoutParams(dp(270), -2).apply { setMargins(0, dp(4), 0, dp(4)) })
         container.addView(row)
     }
 
-    private fun hideOverlay() {
-        removeChat()
-        removeBubble()
-    }
+    private fun hideOverlay() { removeChat(); removeBubble() }
 
     private fun hideKeyboard(input: EditText) {
-        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-            .hideSoftInputFromWindow(input.windowToken, 0)
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0)
     }
 
-    private fun removeBubble() {
-        bubble?.let { runCatching { windowManager.removeView(it) } }
-        bubble = null
-        bubbleParams = null
-    }
+    private fun removeBubble() { bubble?.let { runCatching { windowManager.removeView(it) } }; bubble = null; bubbleParams = null }
+    private fun removeChat() { chatPanel?.let { runCatching { windowManager.removeView(it) } }; chatPanel = null; chatParams = null }
 
-    private fun removeChat() {
-        chatPanel?.let { runCatching { windowManager.removeView(it) } }
-        chatPanel = null
-        chatParams = null
-    }
+    private fun roundedBackground(color: Int, radius: Float): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius.toInt()).toFloat() }
 
-    private fun roundedBackground(color: Int, radius: Float): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius.toInt()).toFloat()
-        }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).roundToInt()
+    private fun dp(value: Int): Int = (value.toFloat() * resources.displayMetrics.density).roundToInt()
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
@@ -449,5 +283,3 @@ class LeauOverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 }
-
-private fun Int.roundToInt(): Int = this
