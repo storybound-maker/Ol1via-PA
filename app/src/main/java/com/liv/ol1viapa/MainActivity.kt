@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
         }
         setupSpeechRecognizer()
         enableEdgeToEdge()
-        setContent { LeauPATheme { LeauHomeScreen(recognizedText, isListening, isSpeaking, ::startListening, ::speak) { sender -> sendRecognizedMessage = sender } } }
+        setContent { LeauPATheme { PremiumLeauHomeScreen(recognizedText, isListening, isSpeaking, ::startListening, ::speak) { sender -> sendRecognizedMessage = sender } } }
     }
 
     private fun normalizeVoiceInput(input: String): String {
@@ -128,96 +128,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boolean, onMicClick: () -> Unit, onLeauReply: (String) -> Unit, registerVoiceMessageSender: ((String) -> Unit) -> Unit) {
-    var message by remember { mutableStateOf(initialMessage) }
-    var isThinking by remember { mutableStateOf(false) }
-    val messages = remember { mutableStateListOf<ChatMessage>() }
-    val context = LocalContext.current
-    LaunchedEffect(initialMessage) { if (initialMessage.isNotEmpty()) message = initialMessage }
-
-    fun buildHistory(): List<JSONObject> {
-        val history = mutableListOf<JSONObject>()
-        LeauMemory.buildMemoryHistoryMessage(context)?.let { history.add(it) }
-        history.addAll(messages.takeLast(20).map { m -> JSONObject().put("role", if (m.fromLeau) "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", m.text))) })
-        return history
-    }
-
-    fun showLocalReply(reply: String) { messages.add(ChatMessage(reply, true)); onLeauReply(reply) }
-
-    fun formatAlarmTime(hour: Int, minute: Int): String {
-        val displayHour = when { hour == 0 -> 12; hour > 12 -> hour - 12; else -> hour }
-        val suffix = if (hour < 12) "AM" else "PM"
-        return String.format(Locale.US, "%d:%02d %s", displayHour, minute, suffix)
-    }
-
-    fun openAppCommand(input: String): Boolean {
-        val lower = input.lowercase(Locale.US).trim()
-        val match = Regex("^(open|launch|start|run|go to)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
-        val target = match.groupValues[2].trim()
-        if (target == "settings" || target == "android settings" || target == "phone settings") return try { context.startActivity(Intent(Settings.ACTION_SETTINGS)); messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening Settings."); true } catch (_: Exception) { false }
-        if (target == "camera" || target == "my camera" || target == "the camera") return try { val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE); if (cameraIntent.resolveActivity(context.packageManager) == null) return false; context.startActivity(cameraIntent); messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening the camera."); true } catch (_: Exception) { false }
-        val app = when { target.contains("youtube") -> Triple("YouTube", "com.google.android.youtube", "https://www.youtube.com"); target.contains("chrome") -> Triple("Chrome", "com.android.chrome", "https://www.google.com"); target.contains("gmail") -> Triple("Gmail", "com.google.android.gm", "mailto:"); target.contains("maps") -> Triple("Maps", "com.google.android.apps.maps", "geo:0,0?q=maps"); target.contains("play store") || target.contains("google play") -> Triple("Play Store", "com.android.vending", "https://play.google.com/store"); else -> null } ?: return false
-        return try { val launchIntent = context.packageManager.getLaunchIntentForPackage(app.second); if (launchIntent != null) context.startActivity(launchIntent) else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(app.third))); messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening ${app.first}."); true } catch (_: Exception) { false }
-    }
-
-    fun setTimerCommand(input: String): Boolean {
-        val lower = input.lowercase(Locale.US).trim()
-        val match = Regex("^(set|start)(?:\\s+me)?\\s+(?:a\\s+)?timer(?:\\s+(?:for|of))?\\s+(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)(?:\\s+from\\s+now)?[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
-        val amount = match.groupValues[1].toLongOrNull() ?: return false
-        if (amount <= 0) return false
-        val unit = match.groupValues[2].lowercase(Locale.US)
-        val secondsLong = when { unit.startsWith("second") -> amount; unit.startsWith("minute") -> amount * 60L; else -> amount * 3600L }
-        if (secondsLong > Int.MAX_VALUE) return false
-        return try {
-            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                putExtra(AlarmClock.EXTRA_LENGTH, secondsLong.toInt())
-                putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer")
-                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-            }
-            context.startActivity(intent)
-            messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Setting a ${amount} ${unit} timer."); true
-        } catch (_: Exception) {
-            Toast.makeText(context, "I couldn't open the timer on this phone.", Toast.LENGTH_SHORT).show()
-            false
-        }
-    }
-
-    fun setAlarmCommand(input: String): Boolean {
-        val lower = input.lowercase(Locale.US).trim()
-        val match = Regex("^(set|create|make) (?:an )?alarm (?:for )?(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
-        var hour = match.groupValues[2].toIntOrNull() ?: return false
-        val minute = match.groupValues[3].toIntOrNull() ?: 0
-        val meridiem = match.groupValues[4].lowercase(Locale.US)
-        if (minute !in 0..59) return false
-        if (meridiem == "am" || meridiem == "pm") { if (hour !in 1..12) return false; if (meridiem == "am" && hour == 12) hour = 0; if (meridiem == "pm" && hour != 12) hour += 12 } else if (hour !in 0..23) return false
-        return try { val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply { putExtra(AlarmClock.EXTRA_HOUR, hour); putExtra(AlarmClock.EXTRA_MINUTES, minute); putExtra(AlarmClock.EXTRA_MESSAGE, "Leau alarm"); putExtra(AlarmClock.EXTRA_SKIP_UI, false) }; context.startActivity(intent); messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Setting your alarm for ${formatAlarmTime(hour, minute)}."); true } catch (_: Exception) { false }
-    }
-
-    fun sendText(textToSend: String) {
-        val text = textToSend.trim()
-        if (text.isEmpty() || isThinking) return
-        if (openAppCommand(text)) return
-        if (setTimerCommand(text)) return
-        if (setAlarmCommand(text)) return
-        val lower = text.lowercase(Locale.US)
-        if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) || lower.matches(Regex("^what do you know about me[.!?]?$")) || lower.matches(Regex("^show my memories[.!?]?$"))) { messages.add(ChatMessage(text, false)); message = ""; val memories = LeauMemory.getMemories(context); val reply = if (memories.isEmpty()) "I don't have any saved memories about you yet." else "Here's what I remember about you:\n" + memories.joinToString("\n") { "• $it" }; showLocalReply(reply); return }
-        if (lower.matches(Regex("^forget everything( you remember)?( about me)?[.!?]?$")) || lower.matches(Regex("^forget all( my)? memories[.!?]?$")) || lower.matches(Regex("^clear (all )?(my )?memories[.!?]?$"))) { messages.add(ChatMessage(text, false)); message = ""; LeauMemory.clearMemories(context); showLocalReply("Done. I've forgotten all of the memories I had saved about you."); return }
-        val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$").find(text)
-        if (forgetMatch != null) { messages.add(ChatMessage(text, false)); message = ""; val target = forgetMatch.groupValues[1].trim(); val removed = LeauMemory.forgetMemory(context, target); showLocalReply(if (removed) "Done. I've forgotten that memory." else "I couldn't find a saved memory matching that."); return }
-        LeauMemory.rememberFromUserMessage(context, text)
-        val history = buildHistory()
-        messages.add(ChatMessage(text, false)); message = ""; isThinking = true
-        LeauApi.sendMessage(text, history) { result -> android.os.Handler(android.os.Looper.getMainLooper()).post { result.onSuccess { reply -> messages.add(ChatMessage(reply, true)); onLeauReply(reply) }.onFailure { error -> val detail = error.message ?: "Unknown connection error"; messages.add(ChatMessage("I couldn't reach my AI brain. $detail", true)); Toast.makeText(context, detail, Toast.LENGTH_LONG).show() }; isThinking = false } }
-    }
-
-    registerVoiceMessageSender { recognized -> sendText(recognized) }
-    fun sendMessage() { sendText(message) }
-
-    Scaffold(Modifier.fillMaxSize()) { innerPadding -> Column(Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(28.dp)); Text("Leau", style = MaterialTheme.typography.headlineLarge); Text("Your personal assistant", style = MaterialTheme.typography.bodyMedium); Spacer(Modifier.height(20.dp))
-        if (messages.isEmpty()) { when { isListening -> { ListeningLeauEyes(); Spacer(Modifier.height(20.dp)); Text("I'm listening…", style = MaterialTheme.typography.headlineSmall) }; isSpeaking -> { SpeakingLeauEyes(); Spacer(Modifier.height(20.dp)); Text("Leau is speaking…", style = MaterialTheme.typography.headlineSmall) }; else -> { BlinkingLeauEyes(); Spacer(Modifier.height(20.dp)); Text("How can I help?", style = MaterialTheme.typography.headlineSmall) } }; Spacer(Modifier.weight(1f)) } else { LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) { items(messages) { chatMessage -> Row(Modifier.fillMaxWidth(), horizontalArrangement = if (chatMessage.fromLeau) Arrangement.Start else Arrangement.End) { Box(Modifier.clip(RoundedCornerShape(18.dp)).background(if (chatMessage.fromLeau) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary).padding(horizontal = 16.dp, vertical = 12.dp)) { Text(chatMessage.text, color = if (chatMessage.fromLeau) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary) } } }; if (isThinking) { item { ThinkingLeauEyes() }; item { Text("Leau is thinking…", style = MaterialTheme.typography.bodyMedium) } } } }
-        Spacer(Modifier.height(12.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { OutlinedTextField(value = message, onValueChange = { message = it }, Modifier.weight(1f), placeholder = { Text("Ask Leau...") }, singleLine = true, enabled = !isThinking && !isListening && !isSpeaking, shape = RoundedCornerShape(20.dp)); IconButton(onClick = ::sendMessage, enabled = !isThinking && !isListening && !isSpeaking) { Icon(Icons.Default.Send, "Send") } }
-        Spacer(Modifier.height(12.dp)); IconButton(onClick = onMicClick, enabled = !isThinking && !isListening && !isSpeaking, modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(Icons.Default.Mic, "Talk to Leau", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp)) }; Spacer(Modifier.height(20.dp))
-    } }
+    // Kept as a compatibility wrapper for any existing callers. The premium screen is now the default.
+    PremiumLeauHomeScreen(initialMessage, isListening, isSpeaking, onMicClick, onLeauReply, registerVoiceMessageSender)
 }
 
 @Composable private fun BlinkingLeauEyes() { EyeAnimation(220f, 220, "blink") }
