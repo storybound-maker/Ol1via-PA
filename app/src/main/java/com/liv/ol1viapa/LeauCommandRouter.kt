@@ -11,26 +11,57 @@ object LeauCommandRouter {
         return startTimerIfRequested(context, raw) || callIfRequested(context, raw) || openRequestedApp(context, raw)
     }
 
-    fun startTimerIfRequested(context: Context, raw: String): Boolean {
-        val text = raw.trim().lowercase(Locale.US)
-        if (!(text.startsWith("set timer") || text.startsWith("set a timer") || text.startsWith("start a timer"))) return false
-        val match = Regex("(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)", RegexOption.IGNORE_CASE).find(text) ?: return false
-        val amount = match.groupValues[1].toLongOrNull() ?: return false
-        if (amount <= 0L) return false
-        val unit = match.groupValues[2].lowercase(Locale.US)
-        val millis = when {
-            unit.startsWith("second") -> amount * 1_000L
-            unit.startsWith("minute") -> amount * 60_000L
-            else -> amount * 3_600_000L
+    fun timerResponse(context: Context, raw: String): String? {
+        val text = normalize(raw)
+        if (text.isBlank()) return null
+
+        if (text.matches(Regex("^(how much time is left|how much time is remaining|time left|timer status)$"))) {
+            return if (LeauPomodoro.isRunning(context)) {
+                "You have ${LeauPomodoro.formatRemaining(LeauPomodoro.endAt(context))} left on your timer."
+            } else "There isn't an active timer right now."
         }
-        if (millis <= 0L) return false
-        LeauPomodoro.start(context, millis, "Timer")
-        return true
+
+        if (text.matches(Regex("^(cancel|stop|delete|clear)( my)? timer$")) || text == "cancel timer") {
+            if (!LeauPomodoro.isRunning(context)) return "There isn't an active timer to cancel."
+            LeauPomodoro.cancel(context)
+            return "Timer cancelled."
+        }
+
+        val add = Regex("^(?:add|increase|extend)\\s+(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)(?:\\s+to\\s+(?:my\\s+)?timer)?$").find(text)
+        if (add != null) {
+            val amount = add.groupValues[1].toLongOrNull() ?: return null
+            val unit = add.groupValues[2]
+            if (amount <= 0L || !LeauPomodoro.isRunning(context)) return if (LeauPomodoro.isRunning(context)) null else "There isn't an active timer to extend."
+            val extra = toMillis(amount, unit)
+            val remaining = (LeauPomodoro.endAt(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+            LeauPomodoro.start(context, remaining + extra, LeauPomodoro.label(context))
+            return "Added $amount $unit to your timer."
+        }
+
+        val change = Regex("^(?:actually|change|make) (?:that|it|the timer) (?:to )?(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)$").find(text)
+        if (change != null && LeauPomodoro.isRunning(context)) {
+            val amount = change.groupValues[1].toLongOrNull() ?: return null
+            val unit = change.groupValues[2]
+            if (amount <= 0L) return null
+            LeauPomodoro.start(context, toMillis(amount, unit), LeauPomodoro.label(context))
+            return "Okay, I changed the timer to $amount $unit."
+        }
+
+        val start = Regex("^(?:set|start) (?:a )?timer(?: for)?\\s*(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)$").find(text)
+        if (start != null) {
+            val amount = start.groupValues[1].toLongOrNull() ?: return null
+            val unit = start.groupValues[2]
+            if (amount <= 0L) return null
+            LeauPomodoro.start(context, toMillis(amount, unit), "Timer")
+            return "Timer set for $amount $unit."
+        }
+        return null
     }
 
+    fun startTimerIfRequested(context: Context, raw: String): Boolean = timerResponse(context, raw) != null
+
     fun callIfRequested(context: Context, raw: String): Boolean {
-        val match = Regex("^(?:please\\s+)?(?:call|phone|ring|dial)\\s+(.+?)(?:[.!?])?$", RegexOption.IGNORE_CASE).find(raw.trim())
-            ?: return false
+        val match = Regex("^(?:please\\s+)?(?:call|phone|ring|dial)\\s+(.+?)(?:[.!?])?$", RegexOption.IGNORE_CASE).find(raw.trim()) ?: return false
         val target = match.groupValues[1].trim()
         if (target.isBlank()) return false
         return runCatching {
@@ -43,12 +74,9 @@ object LeauCommandRouter {
     }
 
     fun openRequestedApp(context: Context, raw: String): Boolean {
-        // Keep the floating pill's command path capable of handling timers and calls.
-        if (startTimerIfRequested(context, raw) || callIfRequested(context, raw)) return true
-        val text = raw.lowercase(Locale.US).trim()
-        val match = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(?:the\\s+)?(.+?)(?:[.!?])?$").find(text)
-            ?: return false
-        val requested = normalize(match.groupValues[1])
+        val text = normalize(raw)
+        val match = Regex("^(?:please )?(?:open|launch|start|run) (?:the )?(.+)$").find(text) ?: return false
+        val requested = normalize(match.groupValues[1]).removeSuffix(" application").removeSuffix(" app").trim()
         if (requested.isBlank()) return false
 
         when (requested) {
@@ -61,33 +89,22 @@ object LeauCommandRouter {
         }
 
         val aliases = mapOf(
-            "youtube" to "com.google.android.youtube",
-            "yt" to "com.google.android.youtube",
-            "chrome" to "com.android.chrome",
-            "google chrome" to "com.android.chrome",
-            "spotify" to "com.spotify.music",
-            "whatsapp" to "com.whatsapp",
-            "instagram" to "com.instagram.android",
-            "facebook" to "com.facebook.katana",
-            "gmail" to "com.google.android.gm",
-            "google maps" to "com.google.android.apps.maps",
-            "maps" to "com.google.android.apps.maps",
-            "play store" to "com.android.vending",
-            "google play" to "com.android.vending",
-            "playstore" to "com.android.vending"
+            "youtube" to "com.google.android.youtube", "yt" to "com.google.android.youtube",
+            "chrome" to "com.android.chrome", "google chrome" to "com.android.chrome",
+            "spotify" to "com.spotify.music", "whatsapp" to "com.whatsapp",
+            "instagram" to "com.instagram.android", "snapchat" to "com.snapchat.android",
+            "facebook" to "com.facebook.katana", "messenger" to "com.facebook.orca",
+            "gmail" to "com.google.android.gm", "google maps" to "com.google.android.apps.maps",
+            "maps" to "com.google.android.apps.maps", "play store" to "com.android.vending",
+            "google play" to "com.android.vending", "playstore" to "com.android.vending",
+            "twitch" to "tv.twitch.android.app", "discord" to "com.discord",
+            "telegram" to "org.telegram.messenger"
         )
 
-        val packageName = aliases.entries.firstOrNull { requested == it.key }?.value
-            ?: findInstalledLauncherPackage(context, requested)
-            ?: return false
-
+        val packageName = aliases[requested] ?: findInstalledLauncherPackage(context, requested) ?: return false
         if (launchPackage(context, packageName)) return true
-        if (packageName == "com.android.vending") {
-            return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("market://home"))) || launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store")))
-        }
-        if (packageName == "com.google.android.youtube") {
-            return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")))
-        }
+        if (packageName == "com.android.vending") return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("market://home"))) || launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store")))
+        if (packageName == "com.google.android.youtube") return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")))
         return false
     }
 
@@ -98,7 +115,8 @@ object LeauCommandRouter {
             val label = normalize(info.loadLabel(pm).toString())
             val packageName = info.activityInfo.packageName
             Triple(label, packageName, appMatchScore(label, requested))
-        }.filter { (label, _, score) -> label == requested || label.startsWith(requested) || requested.startsWith(label) || score >= 0.70 }.maxByOrNull { it.third }?.second
+        }.filter { (label, _, score) -> label == requested || label.startsWith(requested) || requested.startsWith(label) || score >= 0.62 }
+            .maxByOrNull { it.third }?.second
     }
 
     private fun appMatchScore(label: String, requested: String): Double {
@@ -109,7 +127,7 @@ object LeauCommandRouter {
         if (labelWords.isEmpty() || requestedWords.isEmpty()) return 0.0
         val intersection = labelWords.intersect(requestedWords).size.toDouble()
         val union = labelWords.union(requestedWords).size.toDouble()
-        val jaccard = if (union == 0.0) 0.0 else intersection / union
+        val jaccard = intersection / union
         return maxOf(jaccard, characterSimilarity(label, requested))
     }
 
@@ -120,7 +138,7 @@ object LeauCommandRouter {
     }
 
     private fun levenshteinDistance(a: String, b: String): Int {
-        val previous = IntArray(b.length + 1) { it }
+        var previous = IntArray(b.length + 1) { it }
         var current = IntArray(b.length + 1)
         for (i in a.indices) {
             current[0] = i + 1
@@ -128,11 +146,15 @@ object LeauCommandRouter {
                 val cost = if (a[i] == b[j]) 0 else 1
                 current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
             }
-            val swap = previous
-            for (j in current.indices) swap[j] = current[j]
-            current = swap
+            val swap = previous; previous = current; current = swap
         }
         return previous[b.length]
+    }
+
+    private fun toMillis(amount: Long, unit: String): Long = when {
+        unit.startsWith("second") -> amount * 1_000L
+        unit.startsWith("minute") -> amount * 60_000L
+        else -> amount * 3_600_000L
     }
 
     private fun launchPackage(context: Context, packageName: String): Boolean {
@@ -148,5 +170,10 @@ object LeauCommandRouter {
         true
     }.getOrDefault(false)
 
-    private fun normalize(value: String): String = value.lowercase(Locale.US).replace("’", "'").replace(Regex("\\bapp\\b"), "").replace(Regex("[^a-z0-9]+"), " ").replace(Regex("\\s+"), " ").trim()
+    private fun normalize(value: String): String = value.lowercase(Locale.US)
+        .replace("’", "'")
+        .replace(Regex("\\b(please|could you|can you)\\b"), "")
+        .replace(Regex("\\bapp\\b"), "")
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .replace(Regex("\\s+"), " ").trim()
 }
