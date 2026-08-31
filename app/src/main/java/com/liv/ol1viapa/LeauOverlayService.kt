@@ -67,6 +67,20 @@ class LeauOverlayService : Service() {
         }, 700)
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Leau Floating Assistant",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps Leau's floating assistant available."
+            }
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_SHOW -> showBubble()
