@@ -25,21 +25,8 @@ jobs:
           s = p.read_text()
           s = s.replace('import android.provider.AlarmClock\n', '')
 
-          old = '''        if (lower == "open settings" || lower == "open android settings") {
-            runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
-            messages.add(ChatMessage(text, false)); reply("Opening Settings."); return
-        }
-
-        val timer = Regex("(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)", RegexOption.IGNORE_CASE).find(lower)
-        if (lower.startsWith("set timer") || lower.startsWith("set a timer") || lower.startsWith("start a timer")) {
-            val amount = timer?.groupValues?.get(1)?.toIntOrNull(); val unit = timer?.groupValues?.get(2)?.lowercase(Locale.US)
-            if (amount != null && amount > 0 && unit != null) {
-                val seconds = when { unit.startsWith("second") -> amount; unit.startsWith("minute") -> amount * 60; else -> amount * 3600 }
-                runCatching { context.startActivity(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, seconds); putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer"); putExtra(AlarmClock.EXTRA_SKIP_UI, true) }) }
-                messages.add(ChatMessage(text, false)); reply("Setting a $amount $unit timer."); return
-            }
-        }
-'''
+          start = s.index('        if (lower == "open settings"')
+          end = s.index('        if (lower.matches(Regex("^what do you remember', start)
 
           new = '''        val timerResponse = LeauCommandRouter.timerResponse(context, text)
         if (timerResponse != null) {
@@ -59,11 +46,9 @@ jobs:
             reply("Opening it now.")
             return
         }
-'''
 
-          if old not in s:
-              raise SystemExit('Expected MainActivity command block was not found; refusing to modify the file.')
-          s = s.replace(old, new, 1)
+'''
+          s = s[:start] + new + s[end:]
           p.write_text(s)
 
       - name: Commit fix and remove temporary workflow
