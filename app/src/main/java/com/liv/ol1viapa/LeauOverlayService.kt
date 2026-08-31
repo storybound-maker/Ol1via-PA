@@ -139,44 +139,57 @@ class LeauOverlayService : Service() {
         if (!Settings.canDrawOverlays(this)) return
         removeBubble(); removePill()
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(7), dp(8), dp(7))
             background = roundedBackground(0xF20C1513.toInt(), 34).apply { setStroke(dp(1), 0xFF3D8170.toInt()) }
             elevation = dp(18).toFloat()
         }
         val eyes = ImageView(this).apply {
-            setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(3), dp(3), dp(5), dp(3)); contentDescription = "LEAU microphone"; animateEyes(this)
+            setImageResource(R.drawable.leau_eyes)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(3), dp(3), dp(5), dp(3))
+            contentDescription = "LEAU microphone"
+            animateEyes(this)
         }
         root.addView(eyes, LinearLayout.LayoutParams(dp(48), dp(42)))
-        val status = TextView(this).apply { text = "LEAU"; setTextColor(0xFFE7FFF7.toInt()); textSize = 12f; setPadding(dp(2), 0, dp(8), 0) }
+        val status = TextView(this).apply {
+            text = "LEAU"
+            setTextColor(0xFFE7FFF7.toInt())
+            textSize = 12f
+            setPadding(dp(2), 0, dp(8), 0)
+        }
         root.addView(status, LinearLayout.LayoutParams(dp(48), -1))
         pomodoroLabel = status; speechEyes = eyes; speechStatus = status
         val input = EditText(this).apply {
-            hint = "Ask LEAU anything..."; setHintTextColor(0xFF7D9E94.toInt()); setTextColor(Color.WHITE)
-            textSize = 14f; setSingleLine(true); setPadding(dp(4), 0, dp(4), 0); background = null
+            hint = "Ask LEAU anything..."
+            setHintTextColor(0xFF7D9E94.toInt())
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setSingleLine(true)
+            setPadding(dp(4), 0, dp(4), 0)
+            background = null
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
         }
         root.addView(input, LinearLayout.LayoutParams(0, -1, 1f))
         val send = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_send); setColorFilter(0xFFB8FF5A.toInt())
-            background = roundedBackground(0x331B4A40.toInt(), 22); contentDescription = "Send"
+            setImageResource(android.R.drawable.ic_menu_send)
+            setColorFilter(0xFFB8FF5A.toInt())
+            background = roundedBackground(0x331B4A40.toInt(), 22)
+            contentDescription = "Send"
         }
         root.addView(send, LinearLayout.LayoutParams(dp(42), dp(42)))
 
         val params = baseParams(dp(360), dp(64), true).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(90)
-            flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(90)
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         }
         pill = root; pillParams = params
+        root.setOnTouchListener { _, event -> event.actionMasked == MotionEvent.ACTION_OUTSIDE }
         runCatching { windowManager.addView(root, params) }
-        installPillDrag(root, eyes, params)
 
-        // ACTION_OUTSIDE is delivered to the window, not reliably to a child listener.
-        // Use a dedicated touch interceptor so tapping anywhere outside the pill dismisses it.
-        root.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) { hideAll(); true } else false
-        }
+        installPillDrag(root, eyes, params)
 
         eyes.setOnClickListener {
             speechListening = !speechListening
@@ -193,17 +206,27 @@ class LeauOverlayService : Service() {
     }
 
     private fun installPillDrag(root: View, handle: View, params: WindowManager.LayoutParams) {
-        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
         handle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; true }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (event.rawX - downX).toInt()
-                    params.y = (startY + (event.rawY - downY).toInt()).coerceAtLeast(0)
-                    runCatching { windowManager.updateViewLayout(root, params) }; true
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY
+                    startX = params.x; startY = params.y; moved = false
+                    true
                 }
-                MotionEvent.ACTION_UP -> false
-                else -> false
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX; val dy = event.rawY - downY
+                    if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
+                    params.x = startX + dx.toInt()
+                    params.y = (startY + dy.toInt()).coerceAtLeast(0)
+                    runCatching { windowManager.updateViewLayout(root, params) }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) handle.performClick()
+                    true
+                }
+                else -> true
             }
         }
     }
@@ -241,13 +264,20 @@ class LeauOverlayService : Service() {
     }
 
     private fun sendOverlayMessage(input: EditText) {
-        val text = input.text.toString().trim(); if (text.isEmpty()) return
-        input.setText(""); val label = pomodoroLabel ?: return; label.text = "Thinking…"
-        val history = mutableListOf<JSONObject>(); LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
-        LeauApi.sendMessage(text, history) { result -> handler.post {
-            result.onSuccess { reply -> label.text = reply.take(24) }.onFailure { label.text = "Try again" }
-            updateLiveActivity()
-        } }
+        val text = input.text.toString().trim()
+        if (text.isEmpty()) return
+        input.setText("")
+        val label = pomodoroLabel ?: return
+        label.text = "Thinking…"
+        val history = mutableListOf<JSONObject>()
+        LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
+        LeauApi.sendMessage(text, history) { result ->
+            handler.post {
+                result.onSuccess { reply -> label.text = reply.take(24) }
+                    .onFailure { label.text = "Try again" }
+                updateLiveActivity()
+            }
+        }
     }
 
     private fun updateLiveActivity() {
@@ -260,20 +290,51 @@ class LeauOverlayService : Service() {
                     if (LeauPomodoro.isRunning(this@LeauOverlayService)) {
                         pomodoroLabel?.text = "${LeauPomodoro.label(this@LeauOverlayService)}  ${LeauPomodoro.formatRemaining(LeauPomodoro.endAt(this@LeauOverlayService))}"
                         handler.postDelayed(this, 1000L)
-                    } else { pomodoroLabel?.text = "✓ Focus complete"; pomodoroRunnable = null }
+                    } else {
+                        pomodoroLabel?.text = "✓ Focus complete"
+                        pomodoroRunnable = null
+                    }
                 }
             }
-            pomodoroRunnable = tick; handler.post(tick)
+            pomodoroRunnable = tick
+            handler.post(tick)
         } else if (!speechListening) pomodoroLabel?.text = "LEAU"
     }
 
-    private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
-    private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
+    private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            android.graphics.PixelFormat.TRANSLUCENT
+        )
+
+    private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable =
+        GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
+
     private fun dp(value: Int): Int = (value.toFloat() * resources.displayMetrics.density).roundToInt()
-    private fun removeBubble() { bubble?.let { runCatching { windowManager.removeView(it) } }; bubble = null; bubbleParams = null }
-    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pillParams = null; pomodoroLabel = null; speechEyes = null; speechStatus = null; speechListening = false; pomodoroRunnable?.let(handler::removeCallbacks); pomodoroRunnable = null }
+
+    private fun removeBubble() {
+        bubble?.let { runCatching { windowManager.removeView(it) } }
+        bubble = null; bubbleParams = null
+    }
+
+    private fun removePill() {
+        pill?.let { runCatching { windowManager.removeView(it) } }
+        pill = null; pillParams = null; pomodoroLabel = null; speechEyes = null; speechStatus = null
+        speechListening = false
+        pomodoroRunnable?.let(handler::removeCallbacks)
+        pomodoroRunnable = null
+    }
+
     private fun hideAll() { removePill(); removeBubble() }
 
-    override fun onDestroy() { handler.removeCallbacksAndMessages(null); removePill(); removeBubble(); super.onDestroy() }
+    override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        removePill(); removeBubble()
+        super.onDestroy()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
