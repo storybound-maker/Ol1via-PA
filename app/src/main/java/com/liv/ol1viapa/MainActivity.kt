@@ -143,6 +143,16 @@ fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boo
 
     fun showLocalReply(reply: String) { messages.add(ChatMessage(reply, true)); onLeauReply(reply) }
 
+    fun formatAlarmTime(hour: Int, minute: Int): String {
+        val displayHour = when {
+            hour == 0 -> 12
+            hour > 12 -> hour - 12
+            else -> hour
+        }
+        val suffix = if (hour < 12) "AM" else "PM"
+        return String.format(Locale.US, "%d:%02d %s", displayHour, minute, suffix)
+    }
+
     fun openAppCommand(input: String): Boolean {
         val lower = input.lowercase(Locale.US).trim()
         val match = Regex("^(open|launch|start|run|go to)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
@@ -221,16 +231,6 @@ fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boo
             context.startActivity(intent)
             messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Setting your alarm for ${formatAlarmTime(hour, minute)}."); true
         } catch (_: Exception) { false }
-    }
-
-    fun formatAlarmTime(hour: Int, minute: Int): String {
-        val displayHour = when {
-            hour == 0 -> 12
-            hour > 12 -> hour - 12
-            else -> hour
-        }
-        val suffix = if (hour < 12) "AM" else "PM"
-        return String.format(Locale.US, "%d:%02d %s", displayHour, minute, suffix)
     }
 
     fun sendText(textToSend: String) {
