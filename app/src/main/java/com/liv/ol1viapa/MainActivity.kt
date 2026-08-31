@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.provider.AlarmClock
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -210,13 +209,58 @@ private fun LeauApp(isListening: Boolean, isSpeaking: Boolean, initialMessage: S
         }
 
         val timer = Regex("(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)", RegexOption.IGNORE_CASE).find(lower)
-        if (lower.startsWith("set timer") || lower.startsWith("set a timer") || lower.startsWith("start a timer")) {
-            val amount = timer?.groupValues?.get(1)?.toIntOrNull(); val unit = timer?.groupValues?.get(2)?.lowercase(Locale.US)
-            if (amount != null && amount > 0 && unit != null) {
-                val seconds = when { unit.startsWith("second") -> amount; unit.startsWith("minute") -> amount * 60; else -> amount * 3600 }
-                runCatching { context.startActivity(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, seconds); putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer"); putExtra(AlarmClock.EXTRA_SKIP_UI, true) }) }
-                messages.add(ChatMessage(text, false)); reply("Setting a $amount $unit timer."); return
+        val timerCommand = lower.startsWith("set timer") || lower.startsWith("set a timer") || lower.startsWith("start a timer") || lower.startsWith("start timer")
+        if (timerCommand && timer != null) {
+            val amount = timer.groupValues[1].toLongOrNull()
+            val unit = timer.groupValues[2].lowercase(Locale.US)
+            if (amount != null && amount > 0L) {
+                val millis = when {
+                    unit.startsWith("second") -> amount * 1000L
+                    unit.startsWith("minute") -> amount * 60_000L
+                    else -> amount * 3_600_000L
+                }
+                MainAppTimerService.startTimer(context, millis, "Timer")
+                messages.add(ChatMessage(text, false)); reply("Starting your $amount $unit Leau timer."); return
             }
+        }
+
+        if (timerCommand && (lower.contains("pomodoro") || lower.contains("focus"))) {
+            MainAppTimerService.startPomodoro(context)
+            messages.add(ChatMessage(text, false)); reply("Starting a 25 minute Pomodoro focus session."); return
+        }
+
+        if (lower.matches(Regex("^(how much time is left|how much time is remaining|time left|check my timer)[.!?]?$"))) {
+            if (MainAppTimerService.isRunning(context)) {
+                reply("You have ${MainAppTimerService.formatRemaining(context)} left on your Leau timer.")
+            } else reply("You don't have an active Leau timer.")
+            messages.add(0, ChatMessage(text, false)); return
+        }
+
+        if (lower.matches(Regex("^(cancel|stop|end)( my| the)? (timer|pomodoro|focus timer)[.!?]?$")) || lower == "cancel timer" || lower == "stop timer") {
+            val wasRunning = MainAppTimerService.isRunning(context)
+            MainAppTimerService.cancel(context)
+            messages.add(ChatMessage(text, false)); reply(if (wasRunning) "Cancelled your Leau timer." else "There isn't an active Leau timer to cancel."); return
+        }
+
+        val addMatch = Regex("^(add|increase|extend)\\s+(?:the\\s+)?(?:timer\\s+)?(?:by\\s+)?(\\d+)\\s*(second|seconds|minute|minutes|hour|hours)[.!?]?$", RegexOption.IGNORE_CASE).find(lower)
+        if (addMatch != null) {
+            val amount = addMatch.groupValues[2].toLongOrNull() ?: 0L
+            val unit = addMatch.groupValues[3]
+            val millis = when {
+                unit.startsWith("second") -> amount * 1000L
+                unit.startsWith("minute") -> amount * 60_000L
+                else -> amount * 3_600_000L
+            }
+            if (MainAppTimerService.isRunning(context)) {
+                MainAppTimerService.addTime(context, millis)
+                messages.add(ChatMessage(text, false)); reply("Added ${addMatch.groupValues[2]} $unit to your Leau timer."); return
+            }
+            messages.add(ChatMessage(text, false)); reply("There isn't an active Leau timer to extend."); return
+        }
+
+        if (lower.matches(Regex("^start( a)? pomodoro[.!?]?$")) || lower.matches(Regex("^start( a)? focus session[.!?]?$"))) {
+            MainAppTimerService.startPomodoro(context)
+            messages.add(ChatMessage(text, false)); reply("Starting a 25 minute Pomodoro focus session."); return
         }
 
         if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) || lower.matches(Regex("^what do you know about me[.!?]?$"))) {
