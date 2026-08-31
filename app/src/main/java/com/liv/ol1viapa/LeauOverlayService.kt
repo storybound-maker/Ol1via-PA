@@ -41,6 +41,7 @@ class LeauOverlayService : Service() {
     private var bubble: View? = null
     private var pill: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
+    private var pillParams: WindowManager.LayoutParams? = null
     private var lastTap = 0L
     private var singleTapRunnable: Runnable? = null
     private var pomodoroRunnable: Runnable? = null
@@ -92,6 +93,7 @@ class LeauOverlayService : Service() {
             background = roundedBackground(0xFF101B19.toInt(), 32)
             contentDescription = "Open LEAU"
             elevation = dp(10).toFloat()
+            animateEyes(this)
         }
         val params = baseParams(size, size, false).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -150,7 +152,13 @@ class LeauOverlayService : Service() {
             background = roundedBackground(0xF20C1513.toInt(), 34).apply { setStroke(dp(1), 0xFF3D8170.toInt()) }
             elevation = dp(18).toFloat()
         }
-        val eyes = ImageView(this).apply { setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE; setPadding(dp(3), dp(3), dp(5), dp(3)); contentDescription = "LEAU" }
+        val eyes = ImageView(this).apply {
+            setImageResource(R.drawable.leau_eyes)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(3), dp(3), dp(5), dp(3))
+            contentDescription = "LEAU microphone"
+            animateEyes(this)
+        }
         root.addView(eyes, LinearLayout.LayoutParams(dp(48), dp(42)))
         val status = TextView(this).apply { text = "LEAU"; setTextColor(0xFFE7FFF7.toInt()); textSize = 12f; setPadding(dp(2), 0, dp(8), 0) }
         root.addView(status, LinearLayout.LayoutParams(dp(48), -1))
@@ -168,26 +176,71 @@ class LeauOverlayService : Service() {
         root.addView(input, LinearLayout.LayoutParams(0, -1, 1f))
         val send = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_send)
-            setColorFilter(0xFF76E8D0.toInt())
+            setColorFilter(0xFFB8FF5A.toInt())
             background = roundedBackground(0x331B4A40.toInt(), 22)
             contentDescription = "Send"
         }
         root.addView(send, LinearLayout.LayoutParams(dp(42), dp(42)))
-        val params = baseParams(dp(360), dp(64), true).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(90) }
+        val params = baseParams(dp(360), dp(64), true).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(90)
+            flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        }
         pill = root
+        pillParams = params
         runCatching { windowManager.addView(root, params) }
-        send.setOnClickListener { sendOverlayMessage(input, root) }
-        input.setOnEditorActionListener { _, _, _ -> sendOverlayMessage(input, root); true }
+        installPillDrag(root, eyes, params)
+        root.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) { hideAll(); true } else false
+        }
+        eyes.setOnClickListener {
+            input.clearFocus()
+            startMainSpeechFromOverlay()
+        }
+        send.setOnClickListener { sendOverlayMessage(input) }
+        input.setOnEditorActionListener { _, _, _ -> sendOverlayMessage(input); true }
         input.requestFocus()
         handler.postDelayed(Runnable {
-            runCatching {
-                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-            }
+            runCatching { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
         }, 150L)
         updateLiveActivity()
     }
 
-    private fun sendOverlayMessage(input: EditText, root: LinearLayout) {
+    private fun installPillDrag(root: View, handle: View, params: WindowManager.LayoutParams) {
+        var downX = 0f
+        var downY = 0f
+        var startX = 0
+        var startY = 0
+        handle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; true }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = startX + (event.rawX - downX).toInt()
+                    params.y = (startY + (event.rawY - downY).toInt()).coerceAtLeast(0)
+                    runCatching { windowManager.updateViewLayout(root, params) }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun animateEyes(view: View) {
+        view.animate().translationY(dp(-2).toFloat()).scaleX(1.04f).scaleY(1.04f).setDuration(1400L).withEndAction {
+            view.animate().translationY(dp(2).toFloat()).scaleX(.96f).scaleY(.96f).setDuration(1400L).withEndAction {
+                if (view.windowToken != null) animateEyes(view)
+            }.start()
+        }.start()
+    }
+
+    private fun startMainSpeechFromOverlay() {
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("start_voice", true)
+        })
+    }
+
+    private fun sendOverlayMessage(input: EditText) {
         val text = input.text.toString().trim()
         if (text.isEmpty()) return
         input.setText("")
@@ -197,8 +250,7 @@ class LeauOverlayService : Service() {
         LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
-                result.onSuccess { reply -> label.text = reply.take(24) }
-                    .onFailure { label.text = "Try again" }
+                result.onSuccess { reply -> label.text = reply.take(24) }.onFailure { label.text = "Try again" }
                 updateLiveActivity()
             }
         }
@@ -230,9 +282,8 @@ class LeauOverlayService : Service() {
     private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
     private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
     private fun dp(value: Int): Int = (value.toFloat() * resources.displayMetrics.density).roundToInt()
-    private fun hideKeyboard(input: EditText) { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0) }
     private fun removeBubble() { bubble?.let { runCatching { windowManager.removeView(it) } }; bubble = null; bubbleParams = null }
-    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pomodoroLabel = null; pomodoroRunnable?.let(handler::removeCallbacks); pomodoroRunnable = null }
+    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pillParams = null; pomodoroLabel = null; pomodoroRunnable?.let(handler::removeCallbacks); pomodoroRunnable = null }
     private fun hideAll() { removePill(); removeBubble() }
 
     override fun onDestroy() {
