@@ -128,8 +128,91 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boolean, onMicClick: () -> Unit, onLeauReply: (String) -> Unit, registerVoiceMessageSender: ((String) -> Unit) -> Unit) {
-    // Kept as a compatibility wrapper for any existing callers. The premium screen is now the default.
     PremiumLeauHomeScreen(initialMessage, isListening, isSpeaking, onMicClick, onLeauReply, registerVoiceMessageSender)
+}
+
+@Composable
+private fun PremiumLeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boolean, onMicClick: () -> Unit, onLeauReply: (String) -> Unit, registerVoiceMessageSender: ((String) -> Unit) -> Unit) {
+    var message by remember { mutableStateOf(initialMessage) }
+    var isThinking by remember { mutableStateOf(false) }
+    val messages = remember { mutableStateListOf<ChatMessage>() }
+    val context = LocalContext.current
+    LaunchedEffect(initialMessage) { if (initialMessage.isNotEmpty()) message = initialMessage }
+
+    fun history(): List<JSONObject> = messages.takeLast(20).map { m -> JSONObject().put("role", if (m.fromLeau) "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", m.text))) }
+
+    fun sendText(raw: String) {
+        val text = raw.trim()
+        if (text.isEmpty() || isThinking) return
+        messages.add(ChatMessage(text, false)); message = ""
+        LeauMemory.rememberFromUserMessage(context, text)
+        isThinking = true
+        LeauApi.sendMessage(text, history()) { result ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                result.onSuccess { reply ->
+                    messages.add(ChatMessage(reply, true))
+                    LeauChatVault.saveConversation(context, messages.toList())
+                    onLeauReply(reply)
+                }.onFailure { error -> messages.add(ChatMessage("I couldn't reach my AI brain. ${error.message ?: "Unknown connection error"}", true)) }
+                isThinking = false
+            }
+        }
+    }
+
+    registerVoiceMessageSender { recognized -> sendText(recognized) }
+
+    val stateText = when { isListening -> "LISTENING"; isThinking -> "THINKING"; isSpeaking -> "SPEAKING"; else -> "READY" }
+    val stateDescription = when { isListening -> "I'm listening"; isThinking -> "Processing your request"; isSpeaking -> "Leau is speaking"; else -> "What can I do for you?" }
+
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("LEAU", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("PERSONAL AI", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                }
+                TextButton(onClick = { context.startActivity(Intent(context, LeauHubActivity::class.java)) }) { Text("HUB") }
+            }
+            Spacer(Modifier.height(12.dp))
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(250.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface))
+                        when { isListening -> ListeningLeauEyes(); isThinking -> ThinkingLeauEyes(); isSpeaking -> SpeakingLeauEyes(); else -> BlinkingLeauEyes() }
+                    }
+                    Text(stateText, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(4.dp))
+                    Text(stateDescription, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (messages.isNotEmpty()) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+                    items(messages) { item ->
+                        Surface(shape = RoundedCornerShape(18.dp), color = if (item.fromLeau) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth()) {
+                            Text(item.text, modifier = Modifier.padding(14.dp), color = if (item.fromLeau) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary)
+                        }
+                    }
+                    if (isThinking) item { Text("LEAU is thinking…", color = MaterialTheme.colorScheme.secondary) }
+                }
+            } else {
+                Spacer(Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Set a timer", "Open camera", "My memories").forEach { quick ->
+                        AssistChip(onClick = { sendText(quick) }, label = { Text(quick) })
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = message, onValueChange = { message = it }, modifier = Modifier.weight(1f), placeholder = { Text("Ask Leau anything...") }, singleLine = true, enabled = !isThinking && !isListening && !isSpeaking, shape = RoundedCornerShape(22.dp))
+                IconButton(onClick = { sendText(message) }, enabled = !isThinking && message.isNotBlank(), modifier = Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(Icons.Default.Send, "Send", tint = MaterialTheme.colorScheme.onPrimary) }
+            }
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = onMicClick, enabled = !isThinking && !isSpeaking, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(22.dp)) { Icon(Icons.Default.Mic, null); Spacer(Modifier.width(8.dp)); Text(if (isListening) "LISTENING..." else "TALK TO LEAU") }
+            Spacer(Modifier.height(18.dp))
+        }
+    }
 }
 
 @Composable private fun BlinkingLeauEyes() { EyeAnimation(220f, 220, "blink") }
