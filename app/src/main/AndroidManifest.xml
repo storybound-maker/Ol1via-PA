@@ -42,12 +42,15 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LeauPA">
-        <activity android:name=".MainActivity" android:exported="true" android:label="@string/app_name" android:theme="@style/Theme.LeauPA" android:windowSoftInputMode="adjustResize">
+        <activity android:name=".LeauOnboardingActivity" android:exported="true" android:label="@string/app_name" android:theme="@style/Theme.LeauPA">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".MainActivity" android:exported="true" android:label="@string/app_name" android:theme="@style/Theme.LeauPA" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".LeauSettingsActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
+        <activity android:name=".LeauHubActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
         <activity android:name=".LeauCallActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
         <activity android:name=".ScreenshotActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
         <activity android:name=".ScreenRecordActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
