@@ -22,6 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Ol1via PA"
+rootProject.name = "Leau PA"
 include(":app")
- 
