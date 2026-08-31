@@ -17,12 +17,32 @@ object LeauApi {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun sendMessage(message: String, history: List<JSONObject> = emptyList(), callback: (Result<String>) -> Unit) {
+        val context = LeauApplication.instance
+
+        // Keep device actions local instead of asking the AI to pretend it performed them.
+        LeauCommandRouter.timerResponse(context, message)?.let { response ->
+            postResult(callback, Result.success(response))
+            return
+        }
+        if (LeauCommandRouter.callIfRequested(context, message)) {
+            postResult(callback, Result.success("Calling now."))
+            return
+        }
+        if (LeauCommandRouter.openRequestedApp(context, message)) {
+            postResult(callback, Result.success("Opening it now."))
+            return
+        }
+
         Thread {
             try {
                 val historyArray = JSONArray()
                 history.forEach { historyArray.put(it) }
                 val payload = JSONObject().put("message", message).put("history", historyArray).toString()
-                val request = Request.Builder().url(WORKER_URL).post(payload.toRequestBody(jsonMediaType)).header("Accept", "application/json").build()
+                val request = Request.Builder()
+                    .url(WORKER_URL)
+                    .post(payload.toRequestBody(jsonMediaType))
+                    .header("Accept", "application/json")
+                    .build()
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
@@ -34,9 +54,13 @@ object LeauApi {
                     if (reply.isBlank()) throw IOException("AI service returned no reply. Response: ${body.take(300)}")
                     postResult(callback, Result.success(reply))
                 }
-            } catch (e: Exception) { postResult(callback, Result.failure(e)) }
+            } catch (e: Exception) {
+                postResult(callback, Result.failure(e))
+            }
         }.start()
     }
 
-    private fun postResult(callback: (Result<String>) -> Unit, result: Result<String>) { mainHandler.post { callback(result) } }
+    private fun postResult(callback: (Result<String>) -> Unit, result: Result<String>) {
+        mainHandler.post { callback(result) }
+    }
 }
