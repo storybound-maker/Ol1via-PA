@@ -5,8 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.AlarmClock
-import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -35,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -46,6 +45,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.random.Random
+
+// Existing activity and speech/AI implementation remain unchanged above the premium UI.
 
 data class ChatMessage(val text: String, val fromLeau: Boolean)
 
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
         }
         setupSpeechRecognizer()
         enableEdgeToEdge()
-        setContent { LeauPATheme { PremiumLeauHomeScreen(recognizedText, isListening, isSpeaking, ::startListening, ::speak) { sender -> sendRecognizedMessage = sender } } }
+        setContent { LeauPATheme { LeauHomeScreen(recognizedText, isListening, isSpeaking, ::startListening, ::speak) { sender -> sendRecognizedMessage = sender } } }
     }
 
     private fun normalizeVoiceInput(input: String): String {
@@ -151,7 +152,8 @@ private fun PremiumLeauHomeScreenImpl(initialMessage: String, isListening: Boole
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 result.onSuccess { reply ->
                     messages.add(ChatMessage(reply, true))
-                    LeauChatVault.saveConversation(context, messages.toList())
+                    val vaultMessages = messages.map { LeauChatVault.VaultMessage(it.text, it.fromLeau) }
+                    LeauChatVault.saveConversation(context, vaultMessages)
                     onLeauReply(reply)
                 }.onFailure { error -> messages.add(ChatMessage("I couldn't reach my AI brain. ${error.message ?: "Unknown connection error"}", true)) }
                 isThinking = false
@@ -198,9 +200,7 @@ private fun PremiumLeauHomeScreenImpl(initialMessage: String, isListening: Boole
             } else {
                 Spacer(Modifier.weight(1f))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Set a timer", "Open camera", "My memories").forEach { quick ->
-                        AssistChip(onClick = { sendText(quick) }, label = { Text(quick) })
-                    }
+                    listOf("Set a timer", "Open camera", "My memories").forEach { quick -> AssistChip(onClick = { sendText(quick) }, label = { Text(quick) }) }
                 }
             }
             Spacer(Modifier.height(12.dp))
