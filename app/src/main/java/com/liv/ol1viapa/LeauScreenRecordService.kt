@@ -23,6 +23,8 @@ class LeauScreenRecordService : Service() {
         const val EXTRA_DATA = "result_data"
         private const val CHANNEL_ID = "leau_screen_recording"
         private const val NOTIFICATION_ID = 4210
+        private const val PREFS = "leau_screen_recording"
+        private const val KEY_RUNNING = "running"
     }
 
     private var projection: MediaProjection? = null
@@ -54,6 +56,7 @@ class LeauScreenRecordService : Service() {
             projection = manager.getMediaProjection(resultCode, data)
         }
         val mediaProjection = projection ?: return
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
 
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -78,18 +81,10 @@ class LeauScreenRecordService : Service() {
                 prepare()
             }
 
-            virtualDisplay = mediaProjection.createVirtualDisplay(
-                "LeauScreenRecording",
-                width,
-                height,
-                density,
-                0,
-                recorder!!.surface,
-                null,
-                null
-            )
-            recorder!!.start()
             startForegroundNotification()
+            virtualDisplay = mediaProjection.createVirtualDisplay("LeauScreenRecording", width, height, density, 0, recorder!!.surface, null, null)
+            recorder!!.start()
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
             notifyOverlay(true)
         } catch (_: Exception) {
             stopRecording(false)
@@ -100,18 +95,17 @@ class LeauScreenRecordService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("LEAU is recording")
-            .setContentText("Tap LEAU's recording control to stop.")
+            .setContentText("Long-press LEAU to stop the recording.")
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun stopRecording(save: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, false).apply()
         val activeRecorder = recorder
         recorder = null
         runCatching { activeRecorder?.stop() }
@@ -123,10 +117,7 @@ class LeauScreenRecordService : Service() {
         projection = null
         val file = outputFile
         outputFile = null
-
-        if (save && file != null && file.exists() && file.length() > 0L) {
-            LeauMediaStore.saveVideo(this, file)
-        }
+        if (save && file != null && file.exists() && file.length() > 0L) LeauMediaStore.saveVideo(this, file)
         notifyOverlay(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
