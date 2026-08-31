@@ -59,7 +59,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.random.Random
-
 import com.liv.ol1viapa.ui.theme.LeauPATheme
 
 data class ChatMessage(val text: String, val fromLeau: Boolean)
@@ -273,6 +272,6 @@ private fun EyeAnimation(height: Float, width: Int, mode: String) {
         }
     }
     Box(modifier = Modifier.size(width = width.dp, height = height.dp), contentAlignment = Alignment.Center) {
-        Image(painter = painterResource(id = R.drawable.ol1via_eyes), contentDescription = "Leau", modifier = Modifier.size(width = width.dp, height = animatedHeight.value.dp), contentScale = ContentScale.FillBounds)
+        Image(painter = painterResource(id = R.drawable.leau_eyes), contentDescription = "Leau", modifier = Modifier.size(width = width.dp, height = animatedHeight.value.dp), contentScale = ContentScale.FillBounds)
     }
 }
