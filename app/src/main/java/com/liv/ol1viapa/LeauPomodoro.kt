@@ -63,7 +63,7 @@ object LeauPomodoro {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_END).remove(KEY_LABEL).apply()
     }
 
-    private fun showFinishedNotification(context: Context) {
+    private fun showFinishedNotification(context: Context, label: String) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             manager.createNotificationChannel(android.app.NotificationChannel(CHANNEL_ID, "LEAU Pomodoro", android.app.NotificationManager.IMPORTANCE_HIGH))
@@ -71,20 +71,24 @@ object LeauPomodoro {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(com.liv.ol1viapa.R.mipmap.ic_launcher)
             .setContentTitle("LEAU")
-            .setContentText("${label(context)} complete. Nice work.")
+            .setContentText("$label complete. Nice work.")
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-        clear(context)
     }
 
     class LeauPomodoroReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent?) {
             if (intent?.action != ACTION_FINISH) return
-            showFinishedNotification(context)
-            val serviceIntent = Intent(context, LeauOverlayService::class.java).setAction(LeauOverlayService.ACTION_SHOW)
-            runCatching { context.startForegroundService(serviceIntent) }
+            val label = LeauPomodoro.label(context)
+            showFinishedNotification(context, label)
+            val alertIntent = Intent(context, LeauTimerAlertService::class.java).apply {
+                action = LeauTimerAlertService.ACTION_TIME_UP
+                putExtra(LeauTimerAlertService.EXTRA_LABEL, label)
+            }
+            runCatching { context.startForegroundService(alertIntent) }
+            clear(context)
         }
     }
 }
