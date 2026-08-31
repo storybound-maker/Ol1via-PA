@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
@@ -51,10 +52,13 @@
 
         <activity android:name=".LeauCallActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
         <activity android:name=".ScreenshotActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
+        <activity android:name=".ScreenRecordActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
 
         <service android:name=".LeauOverlayService" android:exported="false" android:foregroundServiceType="microphone|specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="persistent floating personal assistant overlay" />
         </service>
+
+        <service android:name=".LeauScreenRecordService" android:exported="false" android:foregroundServiceType="mediaProjection|microphone" />
 
         <service android:name=".LeauTimerAlertService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="timer completion alert overlay" />
