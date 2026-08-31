@@ -5,7 +5,6 @@ import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.media.ImageReader
-import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.provider.MediaStore
@@ -30,9 +29,9 @@ class ScreenshotActivity : Activity() {
             return
         }
 
-        val projection: MediaProjection = try {
+        val projection = runCatching {
             projectionManager.getMediaProjection(resultCode, data)
-        } catch (_: Exception) {
+        }.getOrNull() ?: run {
             Toast.makeText(this, "Screenshot capture failed", Toast.LENGTH_SHORT).show()
             finish()
             return
@@ -46,7 +45,7 @@ class ScreenshotActivity : Activity() {
             2
         )
 
-        val display = try {
+        val display = runCatching {
             projection.createVirtualDisplay(
                 "LeauScreenshot",
                 metrics.widthPixels,
@@ -57,7 +56,7 @@ class ScreenshotActivity : Activity() {
                 null,
                 null
             )
-        } catch (_: Exception) {
+        }.getOrNull() ?: run {
             reader.close()
             projection.stop()
             Toast.makeText(this, "Screenshot capture failed", Toast.LENGTH_SHORT).show()
