@@ -1,7 +1,5 @@
 package com.liv.ol1viapa
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -45,6 +43,8 @@ object LeauCommandRouter {
     }
 
     fun openRequestedApp(context: Context, raw: String): Boolean {
+        // Keep the floating pill's command path capable of handling timers and calls.
+        if (startTimerIfRequested(context, raw) || callIfRequested(context, raw)) return true
         val text = raw.lowercase(Locale.US).trim()
         val match = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(?:the\\s+)?(.+?)(?:[.!?])?$").find(text)
             ?: return false
@@ -52,18 +52,12 @@ object LeauCommandRouter {
         if (requested.isBlank()) return false
 
         when (requested) {
-            "settings", "android settings", "phone settings", "system settings" ->
-                return launchIntent(context, Intent(Settings.ACTION_SETTINGS))
-            "wifi", "wi fi", "wifi settings" ->
-                return launchIntent(context, Intent(Settings.ACTION_WIFI_SETTINGS))
-            "bluetooth", "bluetooth settings" ->
-                return launchIntent(context, Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-            "display", "display settings" ->
-                return launchIntent(context, Intent(Settings.ACTION_DISPLAY_SETTINGS))
-            "sound", "sound settings" ->
-                return launchIntent(context, Intent(Settings.ACTION_SOUND_SETTINGS))
-            "apps", "app settings", "applications" ->
-                return launchIntent(context, Intent(Settings.ACTION_APPLICATION_SETTINGS))
+            "settings", "android settings", "phone settings", "system settings" -> return launchIntent(context, Intent(Settings.ACTION_SETTINGS))
+            "wifi", "wi fi", "wifi settings" -> return launchIntent(context, Intent(Settings.ACTION_WIFI_SETTINGS))
+            "bluetooth", "bluetooth settings" -> return launchIntent(context, Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            "display", "display settings" -> return launchIntent(context, Intent(Settings.ACTION_DISPLAY_SETTINGS))
+            "sound", "sound settings" -> return launchIntent(context, Intent(Settings.ACTION_SOUND_SETTINGS))
+            "apps", "app settings", "applications" -> return launchIntent(context, Intent(Settings.ACTION_APPLICATION_SETTINGS))
         }
 
         val aliases = mapOf(
@@ -88,32 +82,23 @@ object LeauCommandRouter {
             ?: return false
 
         if (launchPackage(context, packageName)) return true
-
         if (packageName == "com.android.vending") {
-            return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("market://home"))) ||
-                launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store")))
+            return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("market://home"))) || launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store")))
         }
-
         if (packageName == "com.google.android.youtube") {
             return launchIntent(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")))
         }
-
         return false
     }
 
     private fun findInstalledLauncherPackage(context: Context, requested: String): String? {
         val pm = context.packageManager
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-        return pm.queryIntentActivities(launcherIntent, 0)
-            .asSequence()
-            .map { info ->
-                val label = normalize(info.loadLabel(pm).toString())
-                val packageName = info.activityInfo.packageName
-                Triple(label, packageName, appMatchScore(label, requested))
-            }
-            .filter { (label, _, score) -> label == requested || label.startsWith(requested) || requested.startsWith(label) || score >= 0.70 }
-            .maxByOrNull { it.third }
-            ?.second
+        return pm.queryIntentActivities(launcherIntent, 0).asSequence().map { info ->
+            val label = normalize(info.loadLabel(pm).toString())
+            val packageName = info.activityInfo.packageName
+            Triple(label, packageName, appMatchScore(label, requested))
+        }.filter { (label, _, score) -> label == requested || label.startsWith(requested) || requested.startsWith(label) || score >= 0.70 }.maxByOrNull { it.third }?.second
     }
 
     private fun appMatchScore(label: String, requested: String): Double {
@@ -163,11 +148,5 @@ object LeauCommandRouter {
         true
     }.getOrDefault(false)
 
-    private fun normalize(value: String): String = value
-        .lowercase(Locale.US)
-        .replace("’", "'")
-        .replace(Regex("\\bapp\\b"), "")
-        .replace(Regex("[^a-z0-9]+"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    private fun normalize(value: String): String = value.lowercase(Locale.US).replace("’", "'").replace(Regex("\\bapp\\b"), "").replace(Regex("[^a-z0-9]+"), " ").replace(Regex("\\s+"), " ").trim()
 }
