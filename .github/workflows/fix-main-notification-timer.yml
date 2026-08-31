@@ -1,0 +1,67 @@
+name: Fix main notification timer
+
+on:
+  push:
+    branches: [rebrand/ol1via-pa]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rebrand/ol1via-pa
+          fetch-depth: 0
+
+      - name: Patch MainActivity timer routing
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/src/main/java/com/liv/ol1viapa/MainActivity.kt')
+          s = p.read_text()
+          s = s.replace('import android.provider.AlarmClock\n', '')
+          old = '''        if (lower == "open settings" || lower == "open android settings") {
+            runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            messages.add(ChatMessage(text, false)); reply("Opening Settings."); return
+        }
+
+        val timer = Regex("(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)", RegexOption.IGNORE_CASE).find(lower)
+        if (lower.startsWith("set timer") || lower.startsWith("set a timer") || lower.startsWith("start a timer")) {
+            val amount = timer?.groupValues?.get(1)?.toIntOrNull(); val unit = timer?.groupValues?.get(2)?.lowercase(Locale.US)
+            if (amount != null && amount > 0 && unit != null) {
+                val seconds = when { unit.startsWith("second") -> amount; unit.startsWith("minute") -> amount * 60; else -> amount * 3600 }
+                runCatching { context.startActivity(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, seconds); putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer"); putExtra(AlarmClock.EXTRA_SKIP_UI, true) }) }
+                messages.add(ChatMessage(text, false)); reply("Setting a $amount $unit timer."); return
+            }
+        }
+'''
+          new = '''        if (handleMainAppTimer(context, lower, text) || LeauCommandRouter.openRequestedApp(context, text)) {
+            messages.add(ChatMessage(text, false))
+            val timerReply = mainTimerReply(context, lower)
+            reply(timerReply ?: "Opening it now.")
+            return
+        }
+'''
+          if old not in s:
+              raise SystemExit('Expected timer block not found')
+          s = s.replace(old, new, 1)
+
+          marker = '''    registerVoice { recognized -> send(recognized) }\n'''
+          helpers = '''    fun mainTimerReply(context: android.content.Context, lower: String): String? {\n        if (lower.matches(Regex("^(how much time is left|how much time is remaining|time left|timer status)$"))) {\n            return if (MainAppPomodoro.isRunning(context)) "You have ${MainAppPomodoro.formatRemaining(context)} left on your timer." else "There isn't an active timer right now."\n        }\n        if (lower.matches(Regex("^(cancel|stop|delete|clear)( my)? timer$")) || lower == "cancel timer") return "Timer cancelled."\n        val add = Regex("^(?:add|increase|extend) (\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)(?: to (?:my )?timer)?$").find(lower)\n        if (add != null) return "Added ${add.groupValues[1]} ${add.groupValues[2]} to your timer."\n        val change = Regex("^(?:actually|change|make) (?:that|it|the timer) (?:to )?(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)$").find(lower)\n        if (change != null) return "Okay, I changed the timer to ${change.groupValues[1]} ${change.groupValues[2]}."\n        val start = Regex("^(?:set|start) (?:a )?timer(?: for)?\\\\s*(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)$").find(lower)\n        if (start != null) return "Timer set for ${start.groupValues[1]} ${start.groupValues[2]}."\n        if (lower == "start pomodoro" || lower == "start a pomodoro" || lower == "start pomodoro timer") return "Pomodoro started for 25 minutes."\n        return null\n    }\n\n    fun handleMainAppTimer(context: android.content.Context, lower: String, original: String): Boolean {\n        val add = Regex("^(?:add|increase|extend) (\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)(?: to (?:my )?timer)?$").find(lower)\n        if (add != null) {\n            val amount = add.groupValues[1].toLongOrNull() ?: return false\n            return MainAppPomodoro.add(context, mainUnitMillis(amount, add.groupValues[2]))\n        }\n        if (lower.matches(Regex("^(cancel|stop|delete|clear)( my)? timer$")) || lower == "cancel timer") {\n            if (!MainAppPomodoro.isRunning(context)) return false\n            MainAppPomodoro.cancel(context); return true\n        }\n        val change = Regex("^(?:actually|change|make) (?:that|it|the timer) (?:to )?(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)$").find(lower)\n        if (change != null && MainAppPomodoro.isRunning(context)) {\n            val amount = change.groupValues[1].toLongOrNull() ?: return false\n            MainAppPomodoro.start(context, mainUnitMillis(amount, change.groupValues[2]), MainAppPomodoro.label(context)); return true\n        }\n        val start = Regex("^(?:set|start) (?:a )?timer(?: for)?\\\\s*(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)$").find(lower)\n        if (start != null) {\n            val amount = start.groupValues[1].toLongOrNull() ?: return false\n            MainAppPomodoro.start(context, mainUnitMillis(amount, start.groupValues[2]), "Timer"); return true\n        }\n        if (lower == "start pomodoro" || lower == "start a pomodoro" || lower == "start pomodoro timer") {\n            MainAppPomodoro.start(context, 25L * 60L * 1000L, "Pomodoro"); return true\n        }\n        if (lower.matches(Regex("^(how much time is left|how much time is remaining|time left|timer status)$"))) return true\n        return false\n    }\n\n    fun mainUnitMillis(amount: Long, unit: String): Long = when {\n        unit.startsWith("second") -> amount * 1000L\n        unit.startsWith("minute") -> amount * 60_000L\n        else -> amount * 3_600_000L\n    }\n\n'''
+          if marker not in s:
+              raise SystemExit('Voice registration marker not found')
+          s = s.replace(marker, helpers + marker, 1)
+          p.write_text(s)
+
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/fix-main-notification-timer.yml
+          git add app/src/main/java/com/liv/ol1viapa/MainActivity.kt .github/workflows/fix-main-notification-timer.yml
+          git commit -m "Add reliable main app notification timer [skip ci]"
+          git push origin rebrand/ol1via-pa
