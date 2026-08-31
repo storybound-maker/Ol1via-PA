@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -33,6 +34,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -41,21 +43,32 @@ class LeauOverlayService : Service() {
     companion object {
         const val ACTION_SHOW = "com.liv.ol1viapa.SHOW_OVERLAY"
         const val ACTION_HIDE = "com.liv.ol1viapa.HIDE_OVERLAY"
+        const val ACTION_SCREENSHOT_SAVED = "com.liv.ol1viapa.SCREENSHOT_SAVED"
+        const val ACTION_RECORDING_STARTED = "com.liv.ol1viapa.RECORDING_STARTED"
+        const val ACTION_RECORDING_STOPPED = "com.liv.ol1viapa.RECORDING_STOPPED"
         private const val CHANNEL_ID = "leau_overlay"
         private const val NOTIFICATION_ID = 4201
         private const val TAP_WINDOW = 280L
         private const val LONG_PRESS_MS = 750L
+        private const val PREFS = "leau_overlay"
+        private const val KEY_ENABLED = "enabled"
+        private const val KEY_X = "bubble_x"
+        private const val KEY_Y = "bubble_y"
     }
 
     private lateinit var windowManager: WindowManager
     private val handler = Handler(Looper.getMainLooper())
     private var bubble: View? = null
     private var pill: View? = null
+    private var quickActions: View? = null
+    private var statusView: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var pillParams: WindowManager.LayoutParams? = null
+    private var quickActionParams: WindowManager.LayoutParams? = null
     private var lastTap = 0L
     private var singleTapRunnable: Runnable? = null
     private var longPressRunnable: Runnable? = null
+    private var statusRunnable: Runnable? = null
     private var pomodoroRunnable: Runnable? = null
     private var pomodoroLabel: TextView? = null
     private var speechEyes: ImageView? = null
@@ -66,6 +79,10 @@ class LeauOverlayService : Service() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private val conversationHistory = mutableListOf<JSONObject>()
+    private var voiceRecorder: MediaRecorder? = null
+    private var voiceRecordFile: File? = null
+
+    private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
 
     override fun onCreate() {
         super.onCreate()
@@ -78,8 +95,9 @@ class LeauOverlayService : Service() {
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
-        if (Build.VERSION.SDK_INT >= 29) ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        else startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= 29) {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else startForeground(NOTIFICATION_ID, notification)
         setupSpeechRecognizer()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -93,6 +111,7 @@ class LeauOverlayService : Service() {
                 })
             }
         }
+        handler.post { if (prefs.getBoolean(KEY_ENABLED, false) && Settings.canDrawOverlays(this)) showBubble() }
     }
 
     private fun setupSpeechRecognizer() {
@@ -174,36 +193,19 @@ class LeauOverlayService : Service() {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         stopOverlaySpeech()
-
         val timerReply = LeauCommandRouter.timerResponse(this, trimmed)
         if (timerReply != null) {
-            addToConversation("user", trimmed)
-            addToConversation("model", timerReply)
-            speechStatus?.text = timerReply.take(32)
-            speakReply(timerReply)
-            updateLiveActivity()
-            return
+            addToConversation("user", trimmed); addToConversation("model", timerReply)
+            speechStatus?.text = timerReply.take(32); speakReply(timerReply); updateLiveActivity(); return
         }
-
         if (LeauCommandRouter.callIfRequested(this, trimmed)) {
-            addToConversation("user", trimmed)
-            val confirmation = confirmationFor(trimmed) ?: "Calling now."
-            addToConversation("model", confirmation)
-            speechStatus?.text = confirmation
-            speakReply(confirmation)
-            return
+            addToConversation("user", trimmed); val confirmation = confirmationFor(trimmed) ?: "Calling now."
+            addToConversation("model", confirmation); speechStatus?.text = confirmation; speakReply(confirmation); return
         }
-
         if (LeauCommandRouter.openRequestedApp(this, trimmed)) {
-            addToConversation("user", trimmed)
-            val confirmation = confirmationFor(trimmed) ?: "Opening it now."
-            addToConversation("model", confirmation)
-            speechStatus?.text = confirmation
-            speakReply(confirmation)
-            updateLiveActivity()
-            return
+            addToConversation("user", trimmed); val confirmation = confirmationFor(trimmed) ?: "Opening it now."
+            addToConversation("model", confirmation); speechStatus?.text = confirmation; speakReply(confirmation); updateLiveActivity(); return
         }
-
         sendRecognizedSpeech(trimmed)
     }
 
@@ -216,11 +218,8 @@ class LeauOverlayService : Service() {
         if (conversationHistory.size > 1) history.addAll(conversationHistory.dropLast(1).takeLast(20))
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
-                result.onSuccess { reply ->
-                    addToConversation("model", reply)
-                    status.text = reply.take(32)
-                    speakReply(reply)
-                }.onFailure { speechThinking = false; status.text = "Try again"; updateSpeechVisual() }
+                result.onSuccess { reply -> addToConversation("model", reply); status.text = reply.take(32); speakReply(reply) }
+                    .onFailure { speechThinking = false; status.text = "Try again"; updateSpeechVisual() }
                 updateLiveActivity()
             }
         }
@@ -231,36 +230,177 @@ class LeauOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) { ACTION_SHOW -> showBubble(); ACTION_HIDE -> hideAll() }
+        when (intent?.action) {
+            ACTION_SHOW -> { prefs.edit().putBoolean(KEY_ENABLED, true).apply(); showBubble() }
+            ACTION_HIDE -> { prefs.edit().putBoolean(KEY_ENABLED, false).apply(); hideAll() }
+            ACTION_SCREENSHOT_SAVED -> showBubbleStatus("Screenshot saved")
+            ACTION_RECORDING_STARTED -> showBubbleStatus("Recording…", 900L)
+            ACTION_RECORDING_STOPPED -> showBubbleStatus("Recording saved")
+        }
         if (intent?.action == ACTION_SHOW || intent?.action == null) updateLiveActivity()
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (prefs.getBoolean(KEY_ENABLED, false)) {
+            runCatching { startService(Intent(this, LeauOverlayService::class.java).setAction(ACTION_SHOW)) }
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun savedBubbleX() = prefs.getInt(KEY_X, dp(14))
+    private fun savedBubbleY() = prefs.getInt(KEY_Y, dp(180))
+
+    private fun saveBubblePosition(params: WindowManager.LayoutParams) {
+        prefs.edit().putInt(KEY_X, params.x).putInt(KEY_Y, params.y).apply()
+    }
+
     private fun showBubble() {
         if (!Settings.canDrawOverlays(this)) return
-        removePill(); if (bubble != null) return
-        val view = ImageView(this).apply { setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE; setPadding(dp(7), dp(7), dp(7), dp(7)); background = roundedBackground(0xFF101B19.toInt(), 32f); contentDescription = "Open LEAU"; elevation = dp(10).toFloat(); animateEyes(this) }
-        val params = baseParams(dp(64), dp(64), false).apply { gravity = Gravity.TOP or Gravity.END; x = dp(14); y = dp(180) }
-        installBubbleTouch(view, params); bubble = view; bubbleParams = params; runCatching { windowManager.addView(view, params) }
+        removePill(); removeQuickActions(); removeStatusView()
+        if (bubble != null) return
+        val view = ImageView(this).apply {
+            setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(7), dp(7), dp(7), dp(7)); background = roundedBackground(0xFF101B19.toInt(), 32f)
+            contentDescription = "Open LEAU"; elevation = dp(10).toFloat(); animateEyes(this)
+        }
+        val params = baseParams(dp(64), dp(64), false).apply { gravity = Gravity.TOP or Gravity.END; x = savedBubbleX(); y = savedBubbleY() }
+        installBubbleTouch(view, params)
+        bubble = view; bubbleParams = params
+        runCatching { windowManager.addView(view, params) }
     }
 
     private fun installBubbleTouch(view: View, params: WindowManager.LayoutParams) {
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false; var longPressed = false
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; moved = false; longPressed = false; longPressRunnable?.let(handler::removeCallbacks); longPressRunnable = Runnable { if (!moved) { longPressed = true; lastTap = 0L; singleTapRunnable?.let(handler::removeCallbacks); requestScreenshot() } }; handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS); true }
-                MotionEvent.ACTION_MOVE -> { val dx = (event.rawX - downX).toInt(); val dy = (event.rawY - downY).toInt(); if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true; if (moved) longPressRunnable?.let(handler::removeCallbacks); params.x = (startX + dx).coerceAtLeast(0); params.y = (startY + dy).coerceAtLeast(0); runCatching { windowManager.updateViewLayout(view, params) }; true }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { longPressRunnable?.let(handler::removeCallbacks); if (event.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressed) { val now = System.currentTimeMillis(); if (now - lastTap <= TAP_WINDOW) { singleTapRunnable?.let(handler::removeCallbacks); lastTap = 0L; startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) } else { lastTap = now; singleTapRunnable = Runnable { showPill(); lastTap = 0L }; handler.postDelayed(singleTapRunnable!!, TAP_WINDOW) } }; true }
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y
+                    moved = false; longPressed = false; longPressRunnable?.let(handler::removeCallbacks)
+                    longPressRunnable = Runnable { if (!moved) { longPressed = true; lastTap = 0L; singleTapRunnable?.let(handler::removeCallbacks); showQuickActions() } }
+                    handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS); true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - downX).toInt(); val dy = (event.rawY - downY).toInt()
+                    if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
+                    if (moved) longPressRunnable?.let(handler::removeCallbacks)
+                    params.x = (startX + dx).coerceAtLeast(0); params.y = (startY + dy).coerceAtLeast(0)
+                    runCatching { windowManager.updateViewLayout(view, params) }
+                    quickActionParams?.let { q -> if (quickActions != null) { q.x = params.x + dp(72); q.y = params.y; runCatching { windowManager.updateViewLayout(quickActions, q) } } }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    longPressRunnable?.let(handler::removeCallbacks)
+                    if (event.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressed) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastTap <= TAP_WINDOW) {
+                            singleTapRunnable?.let(handler::removeCallbacks); lastTap = 0L; removeQuickActions()
+                            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                        } else {
+                            lastTap = now; singleTapRunnable = Runnable { showPill(); lastTap = 0L }; handler.postDelayed(singleTapRunnable!!, TAP_WINDOW)
+                        }
+                    }
+                    if (moved) saveBubblePosition(params)
+                    true
+                }
                 else -> true
             }
         }
     }
 
-    private fun requestScreenshot() { startActivity(Intent(this, ScreenshotActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP) }) }
+    private fun showQuickActions() {
+        if (bubble == null || quickActions != null) return
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(3), dp(2), dp(3), dp(2)); background = roundedBackground(0xE80C1513.toInt(), 24f); elevation = dp(12).toFloat() }
+        column.addView(quickActionButton(android.R.drawable.ic_menu_camera, "Screenshot") { removeQuickActions(); requestScreenshot() })
+        column.addView(quickActionButton(android.R.drawable.presence_video_online, "Screen recording") { removeQuickActions(); toggleScreenRecording() })
+        column.addView(quickActionButton(android.R.drawable.ic_btn_speak_now, "Voice recording") { removeQuickActions(); toggleVoiceRecording() })
+        val bp = bubbleParams ?: return
+        val params = baseParams(dp(50), dp(156), false).apply { gravity = Gravity.TOP or Gravity.END; x = bp.x + dp(72); y = bp.y }
+        quickActions = column; quickActionParams = params
+        runCatching { windowManager.addView(column, params) }.onFailure { quickActions = null; quickActionParams = null }
+    }
+
+    private fun quickActionButton(iconRes: Int, description: String, action: () -> Unit): ImageButton = ImageButton(this).apply {
+        setImageResource(iconRes); setColorFilter(0xFFB8FF5A.toInt()); background = roundedBackground(0xFF17332A.toInt(), 21f)
+        contentDescription = description; isClickable = true; isFocusable = true
+        layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { bottomMargin = dp(4) }
+        setOnClickListener { action() }
+    }
+
+    private fun removeQuickActions() {
+        quickActions?.let { runCatching { windowManager.removeView(it) } }
+        quickActions = null; quickActionParams = null
+    }
+
+    private fun requestScreenshot() {
+        startActivity(Intent(this, ScreenshotActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP) })
+    }
+
+    private fun toggleScreenRecording() {
+        val running = getSharedPreferences("leau_screen_recording", MODE_PRIVATE).getBoolean("running", false)
+        if (running) startService(Intent(this, LeauScreenRecordService::class.java).setAction(LeauScreenRecordService.ACTION_STOP))
+        else startActivity(Intent(this, ScreenRecordActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+    }
+
+    private fun toggleVoiceRecording() {
+        if (voiceRecorder != null) stopVoiceRecording() else startVoiceRecording()
+    }
+
+    private fun startVoiceRecording() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            startActivity(Intent(this, MainActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP); putExtra("start_voice", true) })
+            return
+        }
+        val file = File(cacheDir, "LeauVoice_${System.currentTimeMillis()}.m4a")
+        val recorder = MediaRecorder()
+        runCatching {
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(128000)
+            recorder.setAudioSamplingRate(44100)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare(); recorder.start()
+            voiceRecorder = recorder; voiceRecordFile = file
+            showBubbleStatus("Recording…", 900L)
+        }.onFailure { runCatching { recorder.release() }; file.delete(); showBubbleStatus("Try again") }
+    }
+
+    private fun stopVoiceRecording() {
+        val recorder = voiceRecorder ?: return
+        val file = voiceRecordFile
+        voiceRecorder = null; voiceRecordFile = null
+        runCatching { recorder.stop() }; runCatching { recorder.reset() }; runCatching { recorder.release() }
+        if (file != null && file.exists() && file.length() > 0L) {
+            if (LeauMediaStore.saveAudio(this, file) != null) showBubbleStatus("Recording saved") else showBubbleStatus("Save failed")
+        } else showBubbleStatus("Recording failed")
+    }
+
+    private fun showBubbleStatus(text: String, duration: Long = 1400L) {
+        handler.post {
+            removeQuickActions(); removePill(); removeBubble(); removeStatusView()
+            val view = TextView(this).apply {
+                this.text = text; setTextColor(0xFFE7FFF7.toInt()); textSize = 12f; gravity = Gravity.CENTER
+                setPadding(dp(14), 0, dp(14), 0); background = roundedBackground(0xF20C1513.toInt(), 22f).apply { setStroke(dp(1), 0xFF3D8170.toInt()) }
+                elevation = dp(12).toFloat()
+            }
+            val params = baseParams(dp(150), dp(46), false).apply { gravity = Gravity.TOP or Gravity.END; x = savedBubbleX(); y = savedBubbleY() + dp(9) }
+            statusView = view
+            runCatching { windowManager.addView(view, params) }
+            statusRunnable?.let(handler::removeCallbacks)
+            statusRunnable = Runnable { removeStatusView(); showBubble() }
+            handler.postDelayed(statusRunnable!!, duration)
+        }
+    }
+
+    private fun removeStatusView() {
+        statusRunnable?.let(handler::removeCallbacks); statusRunnable = null
+        statusView?.let { runCatching { windowManager.removeView(it) } }; statusView = null
+    }
 
     private fun showPill() {
         if (!Settings.canDrawOverlays(this)) return
-        removeBubble(); removePill()
+        removeBubble(); removeQuickActions(); removePill()
         val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), dp(7), dp(8), dp(7)); background = roundedBackground(0xF20C1513.toInt(), 34f).apply { setStroke(dp(1), 0xFF3D8170.toInt()) }; elevation = dp(18).toFloat() }
         val eye = ImageView(this).apply { setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE; setPadding(dp(3), dp(3), dp(5), dp(3)); contentDescription = "LEAU microphone"; isClickable = true; isFocusable = true; animateEyes(this) }
         root.addView(eye, LinearLayout.LayoutParams(dp(48), dp(42)))
@@ -305,7 +445,7 @@ class LeauOverlayService : Service() {
     private fun hidePillToBubble() { stopOverlaySpeech(); tts?.stop(); speechSpeaking = false; speechThinking = false; removePill(); showBubble() }
     private fun removeBubble() { bubble?.let { runCatching { windowManager.removeView(it) } }; bubble = null; bubbleParams = null }
     private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pillParams = null; pomodoroLabel = null; speechEyes = null; speechStatus = null }
-    private fun hideAll() { stopOverlaySpeech(); tts?.stop(); speechSpeaking = false; speechThinking = false; removeBubble(); removePill() }
+    private fun hideAll() { stopOverlaySpeech(); tts?.stop(); speechSpeaking = false; speechThinking = false; removeQuickActions(); removeBubble(); removePill(); removeStatusView() }
 
     private fun updateLiveActivity() {
         if (pill == null) return
@@ -332,7 +472,8 @@ class LeauOverlayService : Service() {
     private fun dp(v: Float) = (v * resources.displayMetrics.density).roundToInt()
 
     override fun onDestroy() {
-        stopOverlaySpeech(); speechRecognizer?.destroy(); speechRecognizer = null; tts?.stop(); tts?.shutdown(); tts = null; conversationHistory.clear(); handler.removeCallbacksAndMessages(null); hideAll(); super.onDestroy()
+        stopOverlaySpeech(); speechRecognizer?.destroy(); speechRecognizer = null; tts?.stop(); tts?.shutdown(); tts = null
+        stopVoiceRecording(); conversationHistory.clear(); handler.removeCallbacksAndMessages(null); hideAll(); super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
