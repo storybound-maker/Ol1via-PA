@@ -50,36 +50,18 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".LeauCallActivity"
-            android:exported="false"
-            android:theme="@style/Theme.LeauPA" />
+        <activity android:name=".LeauCallActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
+        <activity android:name=".ScreenshotActivity" android:exported="false" android:theme="@style/Theme.LeauPA" />
 
-        <activity
-            android:name=".ScreenshotActivity"
-            android:exported="false"
-            android:theme="@style/Theme.LeauPA" />
-
-        <service
-            android:name=".LeauOverlayService"
-            android:exported="false"
-            android:foregroundServiceType="microphone|specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="persistent floating personal assistant overlay" />
+        <service android:name=".LeauOverlayService" android:exported="false" android:foregroundServiceType="microphone|specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="persistent floating personal assistant overlay" />
         </service>
 
-        <service
-            android:name=".LeauTimerAlertService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="timer completion alert overlay" />
+        <service android:name=".LeauTimerAlertService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="timer completion alert overlay" />
         </service>
 
-        <receiver
-            android:name=".LeauPomodoro$LeauPomodoroReceiver"
-            android:exported="false" />
+        <receiver android:name=".LeauPomodoro$LeauPomodoroReceiver" android:exported="false" />
+        <receiver android:name=".MainAppPomodoro$MainAppPomodoroReceiver" android:exported="false" />
     </application>
 </manifest>
