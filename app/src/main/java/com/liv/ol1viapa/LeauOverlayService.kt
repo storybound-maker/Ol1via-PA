@@ -78,9 +78,8 @@ class LeauOverlayService : Service() {
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
-        if (Build.VERSION.SDK_INT >= 29) {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= 29) ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        else startForeground(NOTIFICATION_ID, notification)
         setupSpeechRecognizer()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -140,14 +139,12 @@ class LeauOverlayService : Service() {
         val recognizer = speechRecognizer ?: return
         speechListening = true; speechThinking = false; updateSpeechVisual(); recognizer.cancel()
         handler.postDelayed({
-            runCatching {
-                recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
-                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                })
-            }.onFailure { speechListening = false; updateSpeechVisual(); setupSpeechRecognizer(); speechStatus?.text = "Try again" }
+            runCatching { recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }) }.onFailure { speechListening = false; updateSpeechVisual(); setupSpeechRecognizer(); speechStatus?.text = "Try again" }
         }, 100L)
     }
 
@@ -216,7 +213,7 @@ class LeauOverlayService : Service() {
         speechThinking = true; speechSpeaking = false; status.text = "Thinking…"; updateSpeechVisual()
         val history = mutableListOf<JSONObject>()
         LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
-        history.addAll(conversationHistory.takeLast(20))
+        if (conversationHistory.size > 1) history.addAll(conversationHistory.dropLast(1).takeLast(20))
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
                 result.onSuccess { reply ->
@@ -242,10 +239,7 @@ class LeauOverlayService : Service() {
     private fun showBubble() {
         if (!Settings.canDrawOverlays(this)) return
         removePill(); if (bubble != null) return
-        val view = ImageView(this).apply {
-            setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE; setPadding(dp(7), dp(7), dp(7), dp(7))
-            background = roundedBackground(0xFF101B19.toInt(), 32f); contentDescription = "Open LEAU"; elevation = dp(10).toFloat(); animateEyes(this)
-        }
+        val view = ImageView(this).apply { setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE; setPadding(dp(7), dp(7), dp(7), dp(7)); background = roundedBackground(0xFF101B19.toInt(), 32f); contentDescription = "Open LEAU"; elevation = dp(10).toFloat(); animateEyes(this) }
         val params = baseParams(dp(64), dp(64), false).apply { gravity = Gravity.TOP or Gravity.END; x = dp(14); y = dp(180) }
         installBubbleTouch(view, params); bubble = view; bubbleParams = params; runCatching { windowManager.addView(view, params) }
     }
@@ -254,27 +248,9 @@ class LeauOverlayService : Service() {
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false; var longPressed = false
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; moved = false; longPressed = false
-                    longPressRunnable?.let(handler::removeCallbacks)
-                    longPressRunnable = Runnable { if (!moved) { longPressed = true; lastTap = 0L; singleTapRunnable?.let(handler::removeCallbacks); requestScreenshot() } }
-                    handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS); true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - downX).toInt(); val dy = (event.rawY - downY).toInt()
-                    if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
-                    if (moved) longPressRunnable?.let(handler::removeCallbacks)
-                    params.x = (startX + dx).coerceAtLeast(0); params.y = (startY + dy).coerceAtLeast(0); runCatching { windowManager.updateViewLayout(view, params) }; true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    longPressRunnable?.let(handler::removeCallbacks)
-                    if (event.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressed) {
-                        val now = System.currentTimeMillis()
-                        if (now - lastTap <= TAP_WINDOW) { singleTapRunnable?.let(handler::removeCallbacks); lastTap = 0L; startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
-                        else { lastTap = now; singleTapRunnable = Runnable { showPill(); lastTap = 0L }; handler.postDelayed(singleTapRunnable!!, TAP_WINDOW) }
-                    }
-                    true
-                }
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; moved = false; longPressed = false; longPressRunnable?.let(handler::removeCallbacks); longPressRunnable = Runnable { if (!moved) { longPressed = true; lastTap = 0L; singleTapRunnable?.let(handler::removeCallbacks); requestScreenshot() } }; handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS); true }
+                MotionEvent.ACTION_MOVE -> { val dx = (event.rawX - downX).toInt(); val dy = (event.rawY - downY).toInt(); if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true; if (moved) longPressRunnable?.let(handler::removeCallbacks); params.x = (startX + dx).coerceAtLeast(0); params.y = (startY + dy).coerceAtLeast(0); runCatching { windowManager.updateViewLayout(view, params) }; true }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { longPressRunnable?.let(handler::removeCallbacks); if (event.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressed) { val now = System.currentTimeMillis(); if (now - lastTap <= TAP_WINDOW) { singleTapRunnable?.let(handler::removeCallbacks); lastTap = 0L; startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) } else { lastTap = now; singleTapRunnable = Runnable { showPill(); lastTap = 0L }; handler.postDelayed(singleTapRunnable!!, TAP_WINDOW) } }; true }
                 else -> true
             }
         }
@@ -311,13 +287,7 @@ class LeauOverlayService : Service() {
                 else -> false
             }
         }
-        eye.setOnClickListener {
-            when {
-                speechSpeaking -> { tts?.stop(); speechSpeaking = false; speechThinking = false; updateSpeechVisual() }
-                speechListening -> stopOverlaySpeech()
-                else -> beginOverlaySpeech()
-            }
-        }
+        eye.setOnClickListener { when { speechSpeaking -> { tts?.stop(); speechSpeaking = false; speechThinking = false; updateSpeechVisual() }; speechListening -> stopOverlaySpeech(); else -> beginOverlaySpeech() } }
     }
 
     private fun sendOverlayMessage(input: EditText) { val text = input.text.toString().trim(); if (text.isEmpty()) return; input.setText(""); dispatchOverlayCommand(text) }
