@@ -17,18 +17,123 @@ jobs:
           ref: rebrand/ol1via-pa
           fetch-depth: 0
 
-      - name: Patch MainActivity
+      - name: Add main app Pomodoro
+        shell: bash
+        run: |
+          cat > app/src/main/java/com/liv/ol1viapa/MainAppPomodoro.kt <<'EOF'
+          package com.liv.ol1viapa
+
+          import android.app.AlarmManager
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import androidx.core.app.NotificationCompat
+          import java.util.Locale
+
+          object MainAppPomodoro {
+              private const val PREFS = "leau_main_app_pomodoro"
+              private const val KEY_END = "end_at"
+              private const val KEY_LABEL = "label"
+              private const val REQUEST_CODE = 8841
+              private const val CHANNEL_ID = "leau_main_app_timer"
+              private const val NOTIFICATION_ID = 8841
+              const val ACTION_FINISH = "com.liv.ol1viapa.MAIN_APP_TIMER_FINISH"
+
+              fun start(context: Context, durationMillis: Long, label: String = "Timer") {
+                  val duration = durationMillis.coerceAtLeast(1_000L)
+                  val end = System.currentTimeMillis() + duration
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                      .putLong(KEY_END, end).putString(KEY_LABEL, label).apply()
+                  ensureChannel(context)
+                  val pi = pendingIntent(context)
+                  val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                  alarm.cancel(pi)
+                  alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, end, pi)
+                  NotificationManagerCompatCompat.notifyOngoing(context, end, label)
+              }
+
+              fun cancel(context: Context) {
+                  val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                  alarm.cancel(pendingIntent(context))
+                  NotificationManagerCompatCompat.cancel(context)
+                  clear(context)
+              }
+
+              fun add(context: Context, extraMillis: Long): Boolean {
+                  if (!isRunning(context)) return false
+                  val remaining = (endAt(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+                  start(context, remaining + extraMillis, label(context))
+                  return true
+              }
+
+              fun isRunning(context: Context): Boolean = endAt(context) > System.currentTimeMillis()
+              fun endAt(context: Context): Long = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_END, 0L)
+              fun label(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LABEL, "Timer") ?: "Timer"
+              fun formatRemaining(context: Context): String = formatRemaining(endAt(context))
+              fun formatRemaining(end: Long): String {
+                  val seconds = ((end - System.currentTimeMillis()).coerceAtLeast(0L)) / 1000L
+                  return String.format(Locale.US, "%02d:%02d", seconds / 60L, seconds % 60L)
+              }
+
+              private fun clear(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+              private fun pendingIntent(context: Context) = PendingIntent.getBroadcast(
+                  context, REQUEST_CODE, Intent(context, Receiver::class.java).setAction(ACTION_FINISH),
+                  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+              )
+              private fun ensureChannel(context: Context) {
+                  val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "LEAU Timer", NotificationManager.IMPORTANCE_LOW))
+              }
+
+              private object NotificationManagerCompatCompat {
+                  fun notifyOngoing(context: Context, end: Long, label: String) {
+                      val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                          .setSmallIcon(R.mipmap.ic_launcher)
+                          .setContentTitle("LEAU • $label")
+                          .setContentText(formatRemaining(end))
+                          .setOngoing(true)
+                          .setOnlyAlertOnce(true)
+                          .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                          .setPriority(NotificationCompat.PRIORITY_LOW)
+                          .build()
+                      androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+                  }
+                  fun cancel(context: Context) = androidx.core.app.NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+              }
+
+              class Receiver : BroadcastReceiver() {
+                  override fun onReceive(context: Context, intent: Intent?) {
+                      if (intent?.action != ACTION_FINISH) return
+                      val label = label(context)
+                      ensureChannel(context)
+                      val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                          .setSmallIcon(R.mipmap.ic_launcher)
+                          .setContentTitle("LEAU — Time up")
+                          .setContentText("$label is complete.")
+                          .setAutoCancel(true)
+                          .setPriority(NotificationCompat.PRIORITY_HIGH)
+                          .setDefaults(NotificationCompat.DEFAULT_ALL)
+                          .build()
+                      androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+                      clear(context)
+                  }
+              }
+          }
+          EOF
+
+      - name: Patch MainActivity to use main-only timer
         shell: python
         run: |
           from pathlib import Path
           p = Path('app/src/main/java/com/liv/ol1viapa/MainActivity.kt')
           s = p.read_text()
           s = s.replace('import android.provider.AlarmClock\n', '')
-
           start = s.index('        if (lower == "open settings"')
           end = s.index('        if (lower.matches(Regex("^what do you remember', start)
-
-          new = '''        val timerResponse = LeauCommandRouter.timerResponse(context, text)
+          new = '''        val timerResponse = mainTimerResponse(context, text)
         if (timerResponse != null) {
             messages.add(ChatMessage(text, false))
             reply(timerResponse)
@@ -49,6 +154,46 @@ jobs:
 
 '''
           s = s[:start] + new + s[end:]
+          marker = '    registerVoice { recognized -> send(recognized) }'
+          helpers = '''    fun mainTimerResponse(context: android.content.Context, raw: String): String? {
+        val lower = raw.trim().lowercase(Locale.US).replace(Regex("\\\\s+"), " ")
+        if (lower.matches(Regex("^(how much time is left|how much time is remaining|time left|timer status)$")))
+            return if (MainAppPomodoro.isRunning(context)) "You have ${MainAppPomodoro.formatRemaining(context)} left on your timer." else "There isn't an active timer right now."
+        if (lower.matches(Regex("^(cancel|stop|delete|clear)( my)? timer$")) || lower == "cancel timer") {
+            if (!MainAppPomodoro.isRunning(context)) return "There isn't an active timer to cancel."
+            MainAppPomodoro.cancel(context); return "Timer cancelled."
+        }
+        val add = Regex("^(?:add|increase|extend) (\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)(?: to (?:my )?timer)?$").find(lower)
+        if (add != null) {
+            val amount = add.groupValues[1].toLongOrNull() ?: return null
+            if (MainAppPomodoro.add(context, mainUnitMillis(amount, add.groupValues[2]))) return "Added $amount ${add.groupValues[2]} to your timer."
+            return "There isn't an active timer to extend."
+        }
+        val change = Regex("^(?:actually|change|make) (?:that|it|the timer) (?:to )?(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)$").find(lower)
+        if (change != null && MainAppPomodoro.isRunning(context)) {
+            val amount = change.groupValues[1].toLongOrNull() ?: return null
+            MainAppPomodoro.start(context, mainUnitMillis(amount, change.groupValues[2]), MainAppPomodoro.label(context)); return "Okay, I changed the timer to $amount ${change.groupValues[2]}."
+        }
+        val start = Regex("^(?:set|start) (?:a )?timer(?: for)?\\\\s*(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)$").find(lower)
+        if (start != null) {
+            val amount = start.groupValues[1].toLongOrNull() ?: return null
+            MainAppPomodoro.start(context, mainUnitMillis(amount, start.groupValues[2]), "Timer"); return "Timer set for $amount ${start.groupValues[2]}."
+        }
+        if (lower == "start pomodoro" || lower == "start a pomodoro" || lower == "start pomodoro timer") {
+            MainAppPomodoro.start(context, 25L * 60L * 1000L, "Pomodoro"); return "Pomodoro started for 25 minutes."
+        }
+        return null
+    }
+
+    fun mainUnitMillis(amount: Long, unit: String): Long = when {
+        unit.startsWith("second") -> amount * 1000L
+        unit.startsWith("minute") -> amount * 60_000L
+        else -> amount * 3_600_000L
+    }
+
+'''
+          if marker not in s: raise SystemExit('Voice registration marker not found')
+          s = s.replace(marker, helpers + marker, 1)
           p.write_text(s)
 
       - name: Commit fix and remove temporary workflow
@@ -56,6 +201,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f .github/workflows/fix-main-command-routing.yml
-          git add app/src/main/java/com/liv/ol1viapa/MainActivity.kt .github/workflows/fix-main-command-routing.yml
-          git commit -m "Fix main app command routing [skip ci]"
+          git add app/src/main/java/com/liv/ol1viapa/MainActivity.kt app/src/main/java/com/liv/ol1viapa/MainAppPomodoro.kt .github/workflows/fix-main-command-routing.yml
+          git commit -m "Fix main app Pomodoro timer [skip ci]"
           git push origin rebrand/ol1via-pa
