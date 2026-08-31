@@ -148,9 +148,8 @@ class MainAppTimerService : Service() {
             val cycle = prefs().getInt(KEY_CYCLE, 1)
             vibrate()
             if (phase == "work") {
-                val nextPhase = "break"
                 val duration = if (cycle >= 4) LONG_BREAK_MS else BREAK_MS
-                prefs().edit().putLong(KEY_END, System.currentTimeMillis() + duration).putString(KEY_PHASE, nextPhase).apply()
+                prefs().edit().putLong(KEY_END, System.currentTimeMillis() + duration).putString(KEY_PHASE, "break").apply()
                 speak(if (cycle >= 4) "Focus complete. Time for a long break." else "Focus complete. Time for a five minute break.")
                 updateNotification("Pomodoro", if (cycle >= 4) "Long break ${format(duration)}" else "Break ${format(duration)}")
                 handler.postDelayed({ ticking = false; beginTicker() }, 50L)
@@ -168,54 +167,32 @@ class MainAppTimerService : Service() {
         clear()
         vibrate()
         updateNotification("LEAU", "$label — TIME UP", true)
+        runCatching {
+            val alertIntent = Intent(this, LeauTimerAlertService::class.java).apply {
+                action = LeauTimerAlertService.ACTION_TIME_UP
+                putExtra(LeauTimerAlertService.EXTRA_LABEL, label)
+            }
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(alertIntent) else startService(alertIntent)
+        }
         speak("Time up. $label is complete.")
         handler.postDelayed({ stopSelf() }, 3500L)
         ticking = false
     }
 
     private fun save(durationMs: Long, label: String, pomodoro: Boolean, phase: String, cycle: Int) {
-        prefs().edit()
-            .putLong(KEY_END, System.currentTimeMillis() + durationMs)
-            .putString(KEY_LABEL, label)
-            .putBoolean(KEY_POMODORO, pomodoro)
-            .putString(KEY_PHASE, phase)
-            .putInt(KEY_CYCLE, cycle)
-            .apply()
+        prefs().edit().putLong(KEY_END, System.currentTimeMillis() + durationMs).putString(KEY_LABEL, label).putBoolean(KEY_POMODORO, pomodoro).putString(KEY_PHASE, phase).putInt(KEY_CYCLE, cycle).apply()
     }
 
-    private fun clear() {
-        prefs().edit().clear().apply()
-    }
-
+    private fun clear() { prefs().edit().clear().apply() }
     private fun prefs() = getSharedPreferences(PREFS, 0)
-
-    private fun format(ms: Long): String {
-        val totalSeconds = max(0L, ms / 1000L)
-        return String.format(Locale.US, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L)
-    }
+    private fun format(ms: Long): String { val totalSeconds = max(0L, ms / 1000L); return String.format(Locale.US, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L) }
 
     private fun buildNotification(title: String, text: String, finished: Boolean): android.app.Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setOngoing(!finished)
-            .setOnlyAlertOnce(!finished)
-            .setPriority(if (finished) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
-            .setCategory(if (finished) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_PROGRESS)
-            .build()
+        NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(text).setOngoing(!finished).setOnlyAlertOnce(!finished).setPriority(if (finished) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW).setCategory(if (finished) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_PROGRESS).build()
 
-    private fun updateNotification(title: String, text: String, finished: Boolean = false) {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(title, text, finished))
-    }
+    private fun updateNotification(title: String, text: String, finished: Boolean = false) { getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(title, text, finished)) }
 
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "LEAU Main Timer", NotificationManager.IMPORTANCE_HIGH)
-            )
-        }
-    }
+    private fun createChannel() { if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "LEAU Main Timer", NotificationManager.IMPORTANCE_HIGH)) }
 
     private fun vibrate() {
         val vibrator = if (Build.VERSION.SDK_INT >= 31) getSystemService(VibratorManager::class.java).defaultVibrator else @Suppress("DEPRECATION") getSystemService(VIBRATOR_SERVICE) as Vibrator
@@ -225,23 +202,9 @@ class MainAppTimerService : Service() {
 
     private fun speak(text: String) {
         tts?.shutdown()
-        tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.US
-                tts?.setSpeechRate(.95f)
-                tts?.setPitch(1.05f)
-                tts?.speak(text.replace(Regex("\\bLeau\\b", RegexOption.IGNORE_CASE), "Liu"), TextToSpeech.QUEUE_FLUSH, null, "main_timer")
-            }
-        }
+        tts = TextToSpeech(this) { status -> if (status == TextToSpeech.SUCCESS) { tts?.language = Locale.US; tts?.setSpeechRate(.95f); tts?.setPitch(1.05f); tts?.speak(text.replace(Regex("\\bLeau\\b", RegexOption.IGNORE_CASE), "Liu"), TextToSpeech.QUEUE_FLUSH, null, "main_timer") } }
     }
 
-    override fun onDestroy() {
-        handler.removeCallbacksAndMessages(null)
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
-        super.onDestroy()
-    }
-
+    override fun onDestroy() { handler.removeCallbacksAndMessages(null); tts?.stop(); tts?.shutdown(); tts = null; super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 }
