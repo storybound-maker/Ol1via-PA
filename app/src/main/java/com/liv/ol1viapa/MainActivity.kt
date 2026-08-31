@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -19,16 +20,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -36,19 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,12 +38,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.liv.ol1viapa.ui.theme.LeauPATheme
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.random.Random
-import com.liv.ol1viapa.ui.theme.LeauPATheme
 
 data class ChatMessage(val text: String, val fromLeau: Boolean)
 
@@ -94,32 +75,16 @@ class MainActivity : ComponentActivity() {
         }
         setupSpeechRecognizer()
         enableEdgeToEdge()
-        setContent {
-            LeauPATheme {
-                LeauHomeScreen(
-                    initialMessage = recognizedText,
-                    isListening = isListening,
-                    isSpeaking = isSpeaking,
-                    onMicClick = ::startListening,
-                    onLeauReply = ::speak,
-                    registerVoiceMessageSender = { sender -> sendRecognizedMessage = sender }
-                )
-            }
-        }
+        setContent { LeauPATheme { LeauHomeScreen(recognizedText, isListening, isSpeaking, ::startListening, ::speak) { sender -> sendRecognizedMessage = sender } } }
     }
 
     private fun normalizeVoiceInput(input: String): String {
         val cleaned = input.trim().replace(Regex("\\s+"), " ")
-        val lower = cleaned.lowercase(Locale.US)
-
-        return when (lower) {
+        return when (cleaned.lowercase(Locale.US)) {
             "hey you", "hey u", "hi you", "hi u", "hello you", "hello u",
-            "hey leo", "hi leo", "hello leo",
-            "hey leu", "hi leu", "hello leu",
-            "hey layou", "hi layou", "hello layou",
-            "hey liu", "hi liu", "hello liu" -> {
+            "hey leo", "hi leo", "hello leo", "hey leu", "hi leu", "hello leu",
+            "hey layou", "hi layou", "hello layou", "hey liu", "hi liu", "hello liu" ->
                 cleaned.replaceFirst(Regex("(?i)^(hey|hi|hello)\\b.*$"), "$1 Leau")
-            }
             else -> cleaned
         }
     }
@@ -138,22 +103,17 @@ class MainActivity : ComponentActivity() {
                     if (partial.isNotBlank()) runOnUiThread { recognizedText = partial }
                 }
                 override fun onResults(results: Bundle?) {
-                    val rawRecognized = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-                    val recognized = normalizeVoiceInput(rawRecognized)
+                    val raw = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    val recognized = normalizeVoiceInput(raw)
                     runOnUiThread {
                         isListening = false
-                        if (recognized.isNotEmpty()) {
-                            recognizedText = recognized
-                            sendRecognizedMessage?.invoke(recognized)
-                        }
+                        if (recognized.isNotEmpty()) { recognizedText = recognized; sendRecognizedMessage?.invoke(recognized) }
                     }
                 }
                 override fun onError(error: Int) {
                     runOnUiThread {
                         isListening = false
-                        if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                            Toast.makeText(this@MainActivity, "I couldn't understand that. Try again.", Toast.LENGTH_SHORT).show()
-                        }
+                        if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) Toast.makeText(this@MainActivity, "I couldn't understand that. Try again.", Toast.LENGTH_SHORT).show()
                     }
                 }
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
@@ -182,17 +142,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
-        val spokenText = text.replace(
-            Regex("\\bLeau\\b", RegexOption.IGNORE_CASE),
-            "Liu"
-        )
-
-        textToSpeech?.speak(
-            spokenText,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "leau_reply"
-        )
+        val spokenText = text.replace(Regex("\\bLeau\\b", RegexOption.IGNORE_CASE), "Liu")
+        textToSpeech?.speak(spokenText, TextToSpeech.QUEUE_FLUSH, null, "leau_reply")
     }
 
     override fun onDestroy() {
@@ -221,73 +172,52 @@ fun LeauHomeScreen(
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val context = LocalContext.current
 
-    LaunchedEffect(initialMessage) {
-        if (initialMessage.isNotEmpty()) message = initialMessage
-    }
+    LaunchedEffect(initialMessage) { if (initialMessage.isNotEmpty()) message = initialMessage }
 
     fun buildHistory(): List<JSONObject> {
         val history = mutableListOf<JSONObject>()
         LeauMemory.buildMemoryHistoryMessage(context)?.let { history.add(it) }
-        history.addAll(messages.takeLast(20).map { chatMessage ->
-            JSONObject().put("role", if (chatMessage.fromLeau) "model" else "user")
-                .put("parts", JSONArray().put(JSONObject().put("text", chatMessage.text)))
-        })
+        history.addAll(messages.takeLast(20).map { m -> JSONObject().put("role", if (m.fromLeau) "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", m.text))) })
         return history
     }
 
-    fun showLocalMemoryReply(reply: String) {
+    fun showLocalReply(reply: String) {
         messages.add(ChatMessage(reply, true))
         onLeauReply(reply)
     }
 
     fun openAppCommand(input: String): Boolean {
         val lower = input.lowercase(Locale.US).trim()
-        val command = Regex("^(open|launch|start|run|go to)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(lower)
-            ?: return false
-
-        val target = command.groupValues[2].trim()
+        val match = Regex("^(open|launch|start|run|go to)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(lower) ?: return false
+        val target = match.groupValues[2].trim()
 
         if (target == "settings" || target == "android settings" || target == "phone settings") {
             return try {
-                context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
-                messages.add(ChatMessage(input, false))
-                message = ""
-                showLocalMemoryReply("Opening Settings.")
-                true
-            } catch (_: Exception) {
-                false
-            }
+                context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening Settings."); true
+            } catch (_: Exception) { false }
         }
 
-        val appInfo = when {
+        val app = when {
             target.contains("youtube") -> Triple("YouTube", "com.google.android.youtube", "https://www.youtube.com")
-            target.contains("chrome") || target.contains("google chrome") -> Triple("Chrome", "com.android.chrome", "https://www.google.com")
-            target.contains("gmail") || target.contains("email") -> Triple("Gmail", "com.google.android.gm", "mailto:")
-            target.contains("maps") || target.contains("google maps") -> Triple("Maps", "com.google.android.apps.maps", "geo:0,0?q=maps")
+            target.contains("chrome") -> Triple("Chrome", "com.android.chrome", "https://www.google.com")
+            target.contains("gmail") -> Triple("Gmail", "com.google.android.gm", "mailto:")
+            target.contains("maps") -> Triple("Maps", "com.google.android.apps.maps", "geo:0,0?q=maps")
             target.contains("play store") || target.contains("google play") -> Triple("Play Store", "com.android.vending", "https://play.google.com/store")
             else -> null
         } ?: return false
 
         return try {
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.second)
-            if (launchIntent != null) {
-                context.startActivity(launchIntent)
-            } else {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(appInfo.third)))
-            }
-            messages.add(ChatMessage(input, false))
-            message = ""
-            showLocalMemoryReply("Opening ${appInfo.first}.")
-            true
-        } catch (_: Exception) {
-            false
-        }
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(app.second)
+            if (launchIntent != null) context.startActivity(launchIntent)
+            else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(app.third)))
+            messages.add(ChatMessage(input, false)); message = ""; showLocalReply("Opening ${app.first}."); true
+        } catch (_: Exception) { false }
     }
 
     fun sendText(textToSend: String) {
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
-
         if (openAppCommand(text)) return
 
         val lower = text.lowercase(Locale.US)
@@ -295,20 +225,20 @@ fun LeauHomeScreen(
             messages.add(ChatMessage(text, false)); message = ""
             val memories = LeauMemory.getMemories(context)
             val reply = if (memories.isEmpty()) "I don't have any saved memories about you yet." else "Here's what I remember about you:\n" + memories.joinToString("\n") { "• $it" }
-            showLocalMemoryReply(reply); return
+            showLocalReply(reply); return
         }
         if (lower.matches(Regex("^forget everything( you remember)?( about me)?[.!?]?$")) || lower.matches(Regex("^forget all( my)? memories[.!?]?$")) || lower.matches(Regex("^clear (all )?(my )?memories[.!?]?$"))) {
-            messages.add(ChatMessage(text, false)); message = ""
-            LeauMemory.clearMemories(context)
-            showLocalMemoryReply("Done. I've forgotten all of the memories I had saved about you."); return
+            messages.add(ChatMessage(text, false)); message = ""; LeauMemory.clearMemories(context)
+            showLocalReply("Done. I've forgotten all of the memories I had saved about you."); return
         }
-        val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$`).find(text)
+        val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$\").find(text)
         if (forgetMatch != null) {
             messages.add(ChatMessage(text, false)); message = ""
             val target = forgetMatch.groupValues[1].trim()
             val removed = LeauMemory.forgetMemory(context, target)
-            showLocalMemoryReply(if (removed) "Done. I've forgotten that memory." else "I couldn't find a saved memory matching that."); return
+            showLocalReply(if (removed) "Done. I've forgotten that memory." else "I couldn't find a saved memory matching that."); return
         }
+
         LeauMemory.rememberFromUserMessage(context, text)
         val history = buildHistory()
         messages.add(ChatMessage(text, false)); message = ""; isThinking = true
@@ -330,22 +260,22 @@ fun LeauHomeScreen(
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(Modifier.height(28.dp))
             Text("Leau", style = MaterialTheme.typography.headlineLarge)
             Text("Your personal assistant", style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(Modifier.height(20.dp))
             if (messages.isEmpty()) {
                 when {
-                    isListening -> { ListeningLeauEyes(); Spacer(modifier = Modifier.height(20.dp)); Text("I'm listening…", style = MaterialTheme.typography.headlineSmall) }
-                    isSpeaking -> { SpeakingLeauEyes(); Spacer(modifier = Modifier.height(20.dp)); Text("Leau is speaking…", style = MaterialTheme.typography.headlineSmall) }
-                    else -> { BlinkingLeauEyes(); Spacer(modifier = Modifier.height(20.dp)); Text("How can I help?", style = MaterialTheme.typography.headlineSmall) }
+                    isListening -> { ListeningLeauEyes(); Spacer(Modifier.height(20.dp)); Text("I'm listening…", style = MaterialTheme.typography.headlineSmall) }
+                    isSpeaking -> { SpeakingLeauEyes(); Spacer(Modifier.height(20.dp)); Text("Leau is speaking…", style = MaterialTheme.typography.headlineSmall) }
+                    else -> { BlinkingLeauEyes(); Spacer(Modifier.height(20.dp)); Text("How can I help?", style = MaterialTheme.typography.headlineSmall) }
                 }
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
             } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(messages) { chatMessage ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (chatMessage.fromLeau) Arrangement.Start else Arrangement.End) {
-                            Box(modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(if (chatMessage.fromLeau) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (chatMessage.fromLeau) Arrangement.Start else Arrangement.End) {
+                            Box(Modifier.clip(RoundedCornerShape(18.dp)).background(if (chatMessage.fromLeau) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary).padding(horizontal = 16.dp, vertical = 12.dp)) {
                                 Text(chatMessage.text, color = if (chatMessage.fromLeau) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary)
                             }
                         }
@@ -353,24 +283,24 @@ fun LeauHomeScreen(
                     if (isThinking) { item { ThinkingLeauEyes() }; item { Text("Leau is thinking…", style = MaterialTheme.typography.bodyMedium) } }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = message, onValueChange = { message = it }, modifier = Modifier.weight(1f), placeholder = { Text("Ask Leau...") }, singleLine = true, enabled = !isThinking && !isListening && !isSpeaking, shape = RoundedCornerShape(20.dp))
                 IconButton(onClick = ::sendMessage, enabled = !isThinking && !isListening && !isSpeaking) { Icon(Icons.Default.Send, contentDescription = "Send") }
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
             IconButton(onClick = onMicClick, enabled = !isThinking && !isListening && !isSpeaking, modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
                 Icon(Icons.Default.Mic, contentDescription = "Talk to Leau", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp))
             }
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(Modifier.height(20.dp))
         }
     }
 }
 
-@Composable private fun BlinkingLeauEyes() { EyeAnimation(height = 220f, width = 220, mode = "blink") }
-@Composable private fun ThinkingLeauEyes() { EyeAnimation(height = 220f, width = 180, mode = "think") }
-@Composable private fun ListeningLeauEyes() { EyeAnimation(height = 220f, width = 220, mode = "listen") }
-@Composable private fun SpeakingLeauEyes() { EyeAnimation(height = 220f, width = 220, mode = "speak") }
+@Composable private fun BlinkingLeauEyes() { EyeAnimation(220f, 220, "blink") }
+@Composable private fun ThinkingLeauEyes() { EyeAnimation(220f, 180, "think") }
+@Composable private fun ListeningLeauEyes() { EyeAnimation(220f, 220, "listen") }
+@Composable private fun SpeakingLeauEyes() { EyeAnimation(220f, 220, "speak") }
 
 @Composable
 private fun EyeAnimation(height: Float, width: Int, mode: String) {
@@ -385,7 +315,7 @@ private fun EyeAnimation(height: Float, width: Int, mode: String) {
             }
         }
     }
-    Box(modifier = Modifier.size(width = width.dp, height = height.dp), contentAlignment = Alignment.Center) {
-        Image(painter = painterResource(id = R.drawable.leau_eyes), contentDescription = "Leau", modifier = Modifier.size(width = width.dp, height = animatedHeight.value.dp), contentScale = ContentScale.FillBounds)
+    Box(Modifier.size(width.dp, height.dp), contentAlignment = Alignment.Center) {
+        Image(painterResource(R.drawable.leau_eyes), "Leau", Modifier.size(width.dp, animatedHeight.value.dp), contentScale = ContentScale.FillBounds)
     }
 }
