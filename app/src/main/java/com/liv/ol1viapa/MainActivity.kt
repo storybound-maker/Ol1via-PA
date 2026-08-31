@@ -48,7 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.clip
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -59,6 +59,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.random.Random
+
+import com.liv.ol1viapa.ui.theme.LeauPATheme
 
 data class ChatMessage(val text: String, val fromLeau: Boolean)
 
