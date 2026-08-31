@@ -1,0 +1,76 @@
+name: Fix main command routing
+
+on:
+  push:
+    branches: [rebrand/ol1via-pa]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rebrand/ol1via-pa
+          fetch-depth: 0
+
+      - name: Patch MainActivity
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/src/main/java/com/liv/ol1viapa/MainActivity.kt')
+          s = p.read_text()
+          s = s.replace('import android.provider.AlarmClock\n', '')
+
+          old = '''        if (lower == "open settings" || lower == "open android settings") {
+            runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            messages.add(ChatMessage(text, false)); reply("Opening Settings."); return
+        }
+
+        val timer = Regex("(\\\\d+)\\\\s*(second|seconds|minute|minutes|hour|hours)", RegexOption.IGNORE_CASE).find(lower)
+        if (lower.startsWith("set timer") || lower.startsWith("set a timer") || lower.startsWith("start a timer")) {
+            val amount = timer?.groupValues?.get(1)?.toIntOrNull(); val unit = timer?.groupValues?.get(2)?.lowercase(Locale.US)
+            if (amount != null && amount > 0 && unit != null) {
+                val seconds = when { unit.startsWith("second") -> amount; unit.startsWith("minute") -> amount * 60; else -> amount * 3600 }
+                runCatching { context.startActivity(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, seconds); putExtra(AlarmClock.EXTRA_MESSAGE, "Leau timer"); putExtra(AlarmClock.EXTRA_SKIP_UI, true) }) }
+                messages.add(ChatMessage(text, false)); reply("Setting a $amount $unit timer."); return
+            }
+        }
+'''
+
+          new = '''        val timerResponse = LeauCommandRouter.timerResponse(context, text)
+        if (timerResponse != null) {
+            messages.add(ChatMessage(text, false))
+            reply(timerResponse)
+            return
+        }
+
+        if (LeauCommandRouter.callIfRequested(context, text)) {
+            messages.add(ChatMessage(text, false))
+            reply("Calling now.")
+            return
+        }
+
+        if (LeauCommandRouter.openRequestedApp(context, text)) {
+            messages.add(ChatMessage(text, false))
+            reply("Opening it now.")
+            return
+        }
+'''
+
+          if old not in s:
+              raise SystemExit('Expected MainActivity command block was not found; refusing to modify the file.')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+      - name: Commit fix and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/fix-main-command-routing.yml
+          git add app/src/main/java/com/liv/ol1viapa/MainActivity.kt .github/workflows/fix-main-command-routing.yml
+          git commit -m "Fix main app command routing [skip ci]"
+          git push origin rebrand/ol1via-pa
