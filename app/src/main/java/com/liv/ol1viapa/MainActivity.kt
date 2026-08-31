@@ -128,11 +128,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boolean, onMicClick: () -> Unit, onLeauReply: (String) -> Unit, registerVoiceMessageSender: ((String) -> Unit) -> Unit) {
-    PremiumLeauHomeScreen(initialMessage, isListening, isSpeaking, onMicClick, onLeauReply, registerVoiceMessageSender)
+    PremiumLeauHomeScreenImpl(initialMessage, isListening, isSpeaking, onMicClick, onLeauReply, registerVoiceMessageSender)
 }
 
 @Composable
-private fun PremiumLeauHomeScreen(initialMessage: String, isListening: Boolean, isSpeaking: Boolean, onMicClick: () -> Unit, onLeauReply: (String) -> Unit, registerVoiceMessageSender: ((String) -> Unit) -> Unit) {
+private fun PremiumLeauHomeScreenImpl(initialMessage: String, isListening: Boolean, isSpeaking: Boolean, onMicClick: () -> Unit, onLeauReply: (String) -> Unit, registerVoiceMessageSender: ((String) -> Unit) -> Unit) {
     var message by remember { mutableStateOf(initialMessage) }
     var isThinking by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
