@@ -71,9 +71,7 @@ class MainActivity : ComponentActivity() {
     private var textToSpeech: TextToSpeech? = null
     private var sendRecognizedMessage: ((String) -> Unit)? = null
 
-    private val speechLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
+    private val speechLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         isListening = false
         if (result.resultCode == RESULT_OK) {
             val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
@@ -85,9 +83,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val microphonePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    private val microphonePermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startSpeechRecognition()
     }
 
@@ -105,7 +101,6 @@ class MainActivity : ComponentActivity() {
                 })
             }
         }
-
         enableEdgeToEdge()
         setContent {
             LeauPATheme {
@@ -134,11 +129,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startListening() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            startSpeechRecognition()
-        } else {
-            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startSpeechRecognition()
+        else microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     private fun startSpeechRecognition() {
@@ -186,25 +178,17 @@ fun LeauHomeScreen(
         val text = textToSend.trim()
         if (text.isEmpty() || isThinking) return
         val lower = text.lowercase(Locale.US)
-
-        if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) ||
-            lower.matches(Regex("^what do you know about me[.!?]?$")) ||
-            lower.matches(Regex("^show my memories[.!?]?$"))) {
+        if (lower.matches(Regex("^what do you remember( about me)?[.!?]?$")) || lower.matches(Regex("^what do you know about me[.!?]?$")) || lower.matches(Regex("^show my memories[.!?]?$"))) {
             messages.add(ChatMessage(text, false)); message = ""
             val memories = LeauMemory.getMemories(context)
-            val reply = if (memories.isEmpty()) "I don't have any saved memories about you yet."
-            else "Here's what I remember about you:\n" + memories.joinToString("\n") { "• $it" }
+            val reply = if (memories.isEmpty()) "I don't have any saved memories about you yet." else "Here's what I remember about you:\n" + memories.joinToString("\n") { "• $it" }
             showLocalMemoryReply(reply); return
         }
-
-        if (lower.matches(Regex("^forget everything( you remember)?( about me)?[.!?]?$")) ||
-            lower.matches(Regex("^forget all( my)? memories[.!?]?$")) ||
-            lower.matches(Regex("^clear (all )?(my )?memories[.!?]?$"))) {
+        if (lower.matches(Regex("^forget everything( you remember)?( about me)?[.!?]?$")) || lower.matches(Regex("^forget all( my)? memories[.!?]?$")) || lower.matches(Regex("^clear (all )?(my )?memories[.!?]?$"))) {
             messages.add(ChatMessage(text, false)); message = ""
             LeauMemory.clearMemories(context)
             showLocalMemoryReply("Done. I've forgotten all of the memories I had saved about you."); return
         }
-
         val forgetMatch = Regex("(?i)^forget(?:\\s+that)?\\s+(.+?)[.!?]?$").find(text)
         if (forgetMatch != null) {
             messages.add(ChatMessage(text, false)); message = ""
@@ -212,7 +196,6 @@ fun LeauHomeScreen(
             val removed = LeauMemory.forgetMemory(context, target)
             showLocalMemoryReply(if (removed) "Done. I've forgotten that memory." else "I couldn't find a saved memory matching that."); return
         }
-
         LeauMemory.rememberFromUserMessage(context, text)
         val history = buildHistory()
         messages.add(ChatMessage(text, false)); message = ""; isThinking = true
@@ -290,6 +273,6 @@ private fun EyeAnimation(height: Float, width: Int, mode: String) {
         }
     }
     Box(modifier = Modifier.size(width = width.dp, height = height.dp), contentAlignment = Alignment.Center) {
-        Image(painter = painterResource(id = R.drawable.leau_eyes), contentDescription = "Leau", modifier = Modifier.size(width = width.dp, height = animatedHeight.value.dp), contentScale = ContentScale.FillBounds)
+        Image(painter = painterResource(id = R.drawable.ol1via_eyes), contentDescription = "Leau", modifier = Modifier.size(width = width.dp, height = animatedHeight.value.dp), contentScale = ContentScale.FillBounds)
     }
 }
