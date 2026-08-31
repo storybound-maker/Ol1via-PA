@@ -31,6 +31,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.math.abs
@@ -64,6 +65,7 @@ class LeauOverlayService : Service() {
     private var speechSpeaking = false
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
+    private val conversationHistory = mutableListOf<JSONObject>()
 
     override fun onCreate() {
         super.onCreate()
@@ -157,12 +159,16 @@ class LeauOverlayService : Service() {
         tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "leau_overlay_reply")
     }
 
+    private fun addToConversation(role: String, text: String) {
+        conversationHistory.add(JSONObject().put("role", role).put("parts", JSONArray().put(JSONObject().put("text", text))))
+        while (conversationHistory.size > 20) conversationHistory.removeAt(0)
+    }
+
     private fun confirmationFor(text: String): String? {
         val lower = text.lowercase(Locale.US).trim()
         return when {
             lower.matches(Regex("^(please\\s+)?(call|phone|ring|dial)\\s+.+$")) -> "Calling now."
-            lower.matches(Regex("^(please\\s+)?(open|launch|start)\\s+.+$")) -> "Opening it now."
-            lower.startsWith("set timer") || lower.startsWith("set a timer") || lower.startsWith("start a timer") -> "Timer set."
+            lower.matches(Regex("^(please\\s+)?(open|launch|start|run)\\s+.+$")) -> "Opening it now."
             else -> null
         }
     }
@@ -171,24 +177,53 @@ class LeauOverlayService : Service() {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         stopOverlaySpeech()
-        confirmationFor(trimmed)?.let { confirmation -> speechStatus?.text = confirmation; speakReply(confirmation) }
-        if (LeauCommandRouter.openRequestedApp(this, trimmed)) {
-            speechThinking = false
-            speechStatus?.text = if (trimmed.lowercase(Locale.US).startsWith("set")) "Timer set" else "Opening…"
+
+        val timerReply = LeauCommandRouter.timerResponse(this, trimmed)
+        if (timerReply != null) {
+            addToConversation("user", trimmed)
+            addToConversation("model", timerReply)
+            speechStatus?.text = timerReply.take(32)
+            speakReply(timerReply)
+            updateLiveActivity()
             return
         }
+
+        if (LeauCommandRouter.callIfRequested(this, trimmed)) {
+            addToConversation("user", trimmed)
+            val confirmation = confirmationFor(trimmed) ?: "Calling now."
+            addToConversation("model", confirmation)
+            speechStatus?.text = confirmation
+            speakReply(confirmation)
+            return
+        }
+
+        if (LeauCommandRouter.openRequestedApp(this, trimmed)) {
+            addToConversation("user", trimmed)
+            val confirmation = confirmationFor(trimmed) ?: "Opening it now."
+            addToConversation("model", confirmation)
+            speechStatus?.text = confirmation
+            speakReply(confirmation)
+            updateLiveActivity()
+            return
+        }
+
         sendRecognizedSpeech(trimmed)
     }
 
     private fun sendRecognizedSpeech(text: String) {
         val status = speechStatus ?: return
+        addToConversation("user", text)
         speechThinking = true; speechSpeaking = false; status.text = "Thinking…"; updateSpeechVisual()
         val history = mutableListOf<JSONObject>()
         LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
+        history.addAll(conversationHistory.takeLast(20))
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
-                result.onSuccess { reply -> status.text = reply.take(32); speakReply(reply) }
-                    .onFailure { speechThinking = false; status.text = "Try again"; updateSpeechVisual() }
+                result.onSuccess { reply ->
+                    addToConversation("model", reply)
+                    status.text = reply.take(32)
+                    speakReply(reply)
+                }.onFailure { speechThinking = false; status.text = "Try again"; updateSpeechVisual() }
                 updateLiveActivity()
             }
         }
@@ -327,7 +362,7 @@ class LeauOverlayService : Service() {
     private fun dp(v: Float) = (v * resources.displayMetrics.density).roundToInt()
 
     override fun onDestroy() {
-        stopOverlaySpeech(); speechRecognizer?.destroy(); speechRecognizer = null; tts?.stop(); tts?.shutdown(); tts = null; handler.removeCallbacksAndMessages(null); hideAll(); super.onDestroy()
+        stopOverlaySpeech(); speechRecognizer?.destroy(); speechRecognizer = null; tts?.stop(); tts?.shutdown(); tts = null; conversationHistory.clear(); handler.removeCallbacksAndMessages(null); hideAll(); super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
