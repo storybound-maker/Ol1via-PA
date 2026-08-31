@@ -181,7 +181,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "leau_reply")
+        val spokenText = text.replace(
+            Regex("\\bLeau\\b", RegexOption.IGNORE_CASE),
+            "Liu"
+        )
+        textToSpeech?.speak(spokenText, TextToSpeech.QUEUE_FLUSH, null, "leau_reply")
     }
 
     override fun onDestroy() {
@@ -317,13 +321,37 @@ fun LeauHomeScreen(
 @Composable
 private fun EyeAnimation(height: Float, width: Int, mode: String) {
     val animatedHeight = remember { Animatable(height) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            when (mode) {
-                "blink" -> { delay(Random.nextLong(2500L, 5000L)); animatedHeight.animateTo(8f, tween(90)); animatedHeight.animateTo(height, tween(120)) }
-                "think" -> { animatedHeight.animateTo(190f, tween(350)); animatedHeight.animateTo(height, tween(450)); delay(180L) }
-                "listen" -> { animatedHeight.animateTo(205f, tween(500)); animatedHeight.animateTo(height, tween(500)); delay(120L) }
-                else -> { animatedHeight.animateTo(200f, tween(180)); animatedHeight.animateTo(height, tween(180)); delay(80L) }
+    LaunchedEffect(mode) {
+        animatedHeight.snapTo(height)
+        when (mode) {
+            "blink" -> {
+                while (true) {
+                    delay(Random.nextLong(2500L, 5000L))
+                    animatedHeight.animateTo(8f, tween(90))
+                    animatedHeight.animateTo(height, tween(120))
+                }
+            }
+            "think" -> {
+                while (true) {
+                    animatedHeight.animateTo(190f, tween(350))
+                    delay(180L)
+                    animatedHeight.animateTo(height, tween(450))
+                    delay(180L)
+                }
+            }
+            "listen" -> {
+                while (true) {
+                    animatedHeight.animateTo(205f, tween(500))
+                    animatedHeight.animateTo(height, tween(500))
+                    delay(120L)
+                }
+            }
+            "speak" -> {
+                while (true) {
+                    animatedHeight.animateTo(200f, tween(180))
+                    animatedHeight.animateTo(height, tween(180))
+                    delay(80L)
+                }
             }
         }
     }
