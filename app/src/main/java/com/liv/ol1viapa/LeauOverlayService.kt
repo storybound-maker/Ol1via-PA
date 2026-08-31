@@ -42,6 +42,7 @@ class LeauOverlayService : Service() {
         private const val CHANNEL_ID = "leau_overlay"
         private const val NOTIFICATION_ID = 4201
         private const val TAP_WINDOW = 280L
+        private const val LONG_PRESS_MS = 750L
     }
 
     private lateinit var windowManager: WindowManager
@@ -52,6 +53,7 @@ class LeauOverlayService : Service() {
     private var pillParams: WindowManager.LayoutParams? = null
     private var lastTap = 0L
     private var singleTapRunnable: Runnable? = null
+    private var longPressRunnable: Runnable? = null
     private var pomodoroRunnable: Runnable? = null
     private var pomodoroLabel: TextView? = null
     private var speechEyes: ImageView? = null
@@ -81,9 +83,7 @@ class LeauOverlayService : Service() {
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        } else startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun setupSpeechRecognizer() {
@@ -95,42 +95,44 @@ class LeauOverlayService : Service() {
                     speechListening = true
                     updateSpeechVisual()
                 }
-
                 override fun onBeginningOfSpeech() {
                     speechListening = true
                     updateSpeechVisual()
                 }
-
                 override fun onRmsChanged(rmsdB: Float) = Unit
                 override fun onBufferReceived(buffer: ByteArray?) = Unit
-
                 override fun onEndOfSpeech() {
                     speechListening = false
                     updateSpeechVisual()
                 }
-
                 override fun onPartialResults(results: Bundle?) {
-                    val value = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull().orEmpty()
-                    if (value.isNotBlank()) speechStatus?.text = value.take(24)
-                }
-
-                override fun onResults(results: Bundle?) {
-                    val value = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()?.trim().orEmpty()
-                    speechListening = false
-                    updateSpeechVisual()
-                    if (value.isNotBlank()) sendRecognizedSpeech(value)
-                }
-
-                override fun onError(error: Int) {
-                    speechListening = false
-                    updateSpeechVisual()
-                    if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                        speechStatus?.text = "Try again"
+                    val value = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    if (value.isNotBlank()) {
+                        handler.post { speechStatus?.text = value.take(32) }
                     }
                 }
-
+                override fun onResults(results: Bundle?) {
+                    val value = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    handler.post {
+                        speechListening = false
+                        if (value.isNotBlank()) {
+                            speechStatus?.text = value.take(32)
+                            dispatchOverlayCommand(value)
+                        } else {
+                            updateSpeechVisual()
+                        }
+                    }
+                }
+                override fun onError(error: Int) {
+                    handler.post {
+                        speechListening = false
+                        if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) setupSpeechRecognizer()
+                        updateSpeechVisual()
+                        if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                            speechStatus?.text = "Try again"
+                        }
+                    }
+                }
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
             })
         }
@@ -144,22 +146,30 @@ class LeauOverlayService : Service() {
             })
             return
         }
-
-        val recognizer = speechRecognizer ?: run {
-            setupSpeechRecognizer()
-            speechRecognizer
-        } ?: return
-
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            speechStatus?.text = "Speech unavailable"
+            return
+        }
+        if (speechRecognizer == null) setupSpeechRecognizer()
+        val recognizer = speechRecognizer ?: return
         speechListening = true
         updateSpeechVisual()
         recognizer.cancel()
-        recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to LEAU")
-        })
+        handler.postDelayed({
+            runCatching {
+                recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to LEAU")
+                })
+            }.onFailure {
+                speechListening = false
+                updateSpeechVisual()
+                setupSpeechRecognizer()
+            }
+        }, 80L)
     }
 
     private fun stopOverlaySpeech() {
@@ -173,6 +183,16 @@ class LeauOverlayService : Service() {
         tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "leau_overlay_reply")
     }
 
+    private fun dispatchOverlayCommand(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        if (LeauCommandRouter.openRequestedApp(this, trimmed)) {
+            speechStatus?.text = "Opening…"
+            return
+        }
+        sendRecognizedSpeech(trimmed)
+    }
+
     private fun sendRecognizedSpeech(text: String) {
         val status = speechStatus ?: return
         status.text = "Thinking…"
@@ -181,7 +201,7 @@ class LeauOverlayService : Service() {
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
                 result.onSuccess { reply ->
-                    status.text = reply.take(24)
+                    status.text = reply.take(32)
                     speakReply(reply)
                 }.onFailure {
                     status.text = "Try again"
@@ -212,7 +232,6 @@ class LeauOverlayService : Service() {
         if (!Settings.canDrawOverlays(this)) return
         removePill()
         if (bubble != null) return
-
         val view = ImageView(this).apply {
             setImageResource(R.drawable.leau_eyes)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -222,13 +241,11 @@ class LeauOverlayService : Service() {
             elevation = dp(10).toFloat()
             animateEyes(this)
         }
-
         val params = baseParams(dp(64), dp(64), false).apply {
             gravity = Gravity.TOP or Gravity.END
             x = dp(14)
             y = dp(180)
         }
-
         installBubbleTouch(view, params)
         bubble = view
         bubbleParams = params
@@ -241,6 +258,7 @@ class LeauOverlayService : Service() {
         var startX = 0
         var startY = 0
         var moved = false
+        var longPressed = false
 
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
@@ -250,19 +268,32 @@ class LeauOverlayService : Service() {
                     startX = params.x
                     startY = params.y
                     moved = false
+                    longPressed = false
+                    longPressRunnable?.let(handler::removeCallbacks)
+                    longPressRunnable = Runnable {
+                        if (!moved) {
+                            longPressed = true
+                            lastTap = 0L
+                            singleTapRunnable?.let(handler::removeCallbacks)
+                            requestScreenshot()
+                        }
+                    }
+                    handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - downX).toInt()
                     val dy = (event.rawY - downY).toInt()
                     if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
+                    if (moved) longPressRunnable?.let(handler::removeCallbacks)
                     params.x = (startX + dx).coerceAtLeast(0)
                     params.y = (startY + dy).coerceAtLeast(0)
                     runCatching { windowManager.updateViewLayout(view, params) }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (!moved) {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    longPressRunnable?.let(handler::removeCallbacks)
+                    if (event.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressed) {
                         val now = System.currentTimeMillis()
                         if (now - lastTap <= TAP_WINDOW) {
                             singleTapRunnable?.let(handler::removeCallbacks)
@@ -284,21 +315,23 @@ class LeauOverlayService : Service() {
         }
     }
 
+    private fun requestScreenshot() {
+        startActivity(Intent(this, ScreenshotActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+    }
+
     private fun showPill() {
         if (!Settings.canDrawOverlays(this)) return
         removeBubble()
         removePill()
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(7), dp(8), dp(7))
-            background = roundedBackground(0xF20C1513.toInt(), 34f).apply {
-                setStroke(dp(1), 0xFF3D8170.toInt())
-            }
+            background = roundedBackground(0xF20C1513.toInt(), 34f).apply { setStroke(dp(1), 0xFF3D8170.toInt()) }
             elevation = dp(18).toFloat()
         }
-
         val eye = ImageView(this).apply {
             setImageResource(R.drawable.leau_eyes)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -309,7 +342,6 @@ class LeauOverlayService : Service() {
             animateEyes(this)
         }
         root.addView(eye, LinearLayout.LayoutParams(dp(48), dp(42)))
-
         val status = TextView(this).apply {
             text = "LEAU"
             setTextColor(0xFFE7FFF7.toInt())
@@ -320,7 +352,6 @@ class LeauOverlayService : Service() {
         pomodoroLabel = status
         speechEyes = eye
         speechStatus = status
-
         val input = EditText(this).apply {
             hint = "Ask LEAU anything..."
             setHintTextColor(0xFF7D9E94.toInt())
@@ -332,7 +363,6 @@ class LeauOverlayService : Service() {
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
         }
         root.addView(input, LinearLayout.LayoutParams(0, -1, 1f))
-
         val send = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_send)
             setColorFilter(0xFFB8FF5A.toInt())
@@ -342,29 +372,20 @@ class LeauOverlayService : Service() {
             isFocusable = true
         }
         root.addView(send, LinearLayout.LayoutParams(dp(42), dp(42)))
-
         val params = baseParams(dp(360), dp(64), true).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(90)
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         }
-
         pill = root
         pillParams = params
         runCatching { windowManager.addView(root, params) }
-
         installPillTouch(root, eye, params)
         send.setOnClickListener { sendOverlayMessage(input) }
-        input.setOnEditorActionListener { _, _, _ ->
-            sendOverlayMessage(input)
-            true
-        }
-
+        input.setOnEditorActionListener { _, _, _ -> sendOverlayMessage(input); true }
         input.requestFocus()
         handler.postDelayed({
-            runCatching {
-                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-            }
+            runCatching { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
         }, 150L)
         updateLiveActivity()
     }
@@ -375,13 +396,9 @@ class LeauOverlayService : Service() {
         var startX = 0
         var startY = 0
         var moved = false
-
         root.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_OUTSIDE -> {
-                    hidePillToBubble()
-                    true
-                }
+                MotionEvent.ACTION_OUTSIDE -> { hidePillToBubble(); true }
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.rawX
                     downY = event.rawY
@@ -405,7 +422,6 @@ class LeauOverlayService : Service() {
                 else -> false
             }
         }
-
         eye.setOnClickListener {
             if (speechListening) stopOverlaySpeech() else beginOverlaySpeech()
         }
@@ -415,7 +431,7 @@ class LeauOverlayService : Service() {
         val text = input.text.toString().trim()
         if (text.isEmpty()) return
         input.setText("")
-        sendToAi(text)
+        dispatchOverlayCommand(text)
     }
 
     private fun sendToAi(text: String) {
@@ -426,11 +442,9 @@ class LeauOverlayService : Service() {
         LeauApi.sendMessage(text, history) { result ->
             handler.post {
                 result.onSuccess { reply ->
-                    status.text = reply.take(24)
+                    status.text = reply.take(32)
                     speakReply(reply)
-                }.onFailure {
-                    status.text = "Try again"
-                }
+                }.onFailure { status.text = "Try again" }
                 updateLiveActivity()
             }
         }
@@ -439,17 +453,14 @@ class LeauOverlayService : Service() {
     private fun updateSpeechVisual() {
         val e = speechEyes ?: return
         val l = speechStatus ?: return
-
         if (speechListening) {
-            e.background = roundedBackground(0x552B5C45.toInt(), 22f).apply {
-                setStroke(dp(2), 0xFFB8FF5A.toInt())
-            }
-            l.text = "Listening…"
+            e.background = roundedBackground(0x552B5C45.toInt(), 22f).apply { setStroke(dp(2), 0xFFB8FF5A.toInt()) }
+            l.text = if (l.text.isNullOrBlank() || l.text == "LEAU") "Listening…" else l.text
             l.setTextColor(0xFFB8FF5A.toInt())
             e.animate().scaleX(1.10f).scaleY(1.10f).setDuration(350L).start()
         } else {
             e.background = null
-            l.text = "LEAU"
+            if (l.text.toString() == "Listening…") l.text = "LEAU"
             l.setTextColor(0xFFE7FFF7.toInt())
             e.animate().scaleX(1f).scaleY(1f).setDuration(250L).start()
         }
@@ -485,7 +496,6 @@ class LeauOverlayService : Service() {
     private fun updateLiveActivity() {
         if (pill == null) return
         pomodoroRunnable?.let(handler::removeCallbacks)
-
         if (LeauPomodoro.isRunning(this)) {
             val tick = object : Runnable {
                 override fun run() {
@@ -501,9 +511,7 @@ class LeauOverlayService : Service() {
             }
             pomodoroRunnable = tick
             handler.post(tick)
-        } else if (!speechListening) {
-            pomodoroLabel?.text = "LEAU"
-        }
+        } else if (!speechListening) pomodoroLabel?.text = "LEAU"
     }
 
     private fun animateEyes(view: View) {
@@ -515,13 +523,9 @@ class LeauOverlayService : Service() {
     }
 
     private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams =
-        WindowManager.LayoutParams(
-            width,
-            height,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            android.graphics.PixelFormat.TRANSLUCENT
-        )
+            android.graphics.PixelFormat.TRANSLUCENT)
 
     private fun roundedBackground(color: Int, radiusDp: Float) = GradientDrawable().apply {
         setColor(color)
