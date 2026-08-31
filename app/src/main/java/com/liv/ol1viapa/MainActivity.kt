@@ -181,11 +181,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
-        val spokenText = text.replace(
-            Regex("\\bLeau\\b", RegexOption.IGNORE_CASE),
-            "Liu"
+        // Keep the visual spelling "Leau", but give Android TTS a phonetic spelling
+        // that reliably sounds like "Liu" / "Lee-oo" instead of reading "Leau".
+        val spokenText = text
+            .replace(Regex("\\bLeau\\b", RegexOption.IGNORE_CASE), "Lee-oo")
+            .replace(Regex("\\bOl1via\\b", RegexOption.IGNORE_CASE), "Olivia")
+            .replace(Regex("\\bOlivia\\b", RegexOption.IGNORE_CASE), "Olivia")
+
+        textToSpeech?.speak(
+            spokenText,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "leau_reply"
         )
-        textToSpeech?.speak(spokenText, TextToSpeech.QUEUE_FLUSH, null, "leau_reply")
     }
 
     override fun onDestroy() {
