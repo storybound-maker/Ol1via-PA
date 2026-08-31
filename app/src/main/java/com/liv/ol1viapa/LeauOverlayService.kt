@@ -58,7 +58,7 @@ class LeauOverlayService : Service() {
             override fun onDoubleTap(e: MotionEvent): Boolean { openApp(); return true }
         })
         b.setOnTouchListener { _, e ->
-            if (e.action == MotionEvent.ACTION_MOVE) move(e.rawX,e.rawY)
+            if (e.action == MotionEvent.ACTION_MOVE) moveBubble(e.rawX,e.rawY)
             detector.onTouchEvent(e); true
         }
         wm.addView(r, overlayParams(76,76,false))
@@ -69,8 +69,7 @@ class LeauOverlayService : Service() {
         expanded = true
         val r = root ?: return
         r.removeAllViews()
-        val full = overlayParams(-1,-1,true)
-        wm.updateViewLayout(r,full)
+        wm.updateViewLayout(r, overlayParams(-1,-1,true).apply { x=0; y=0 })
         r.setOnTouchListener { _, e ->
             if (e.action == MotionEvent.ACTION_DOWN) { hideKeyboard(); showBubble() }
             true
@@ -80,7 +79,8 @@ class LeauOverlayService : Service() {
             background=panelBg(); elevation=20f
         }
         val header=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL }
-        header.addView(ImageView(this).apply { setImageResource(R.drawable.leau_eyes); setPadding(2,2,2,2) },LinearLayout.LayoutParams(40,40))
+        val headerIcon=ImageView(this).apply { setImageResource(R.drawable.leau_eyes); setPadding(2,2,2,2) }
+        header.addView(headerIcon,LinearLayout.LayoutParams(40,40))
         header.addView(TextView(this).apply { text="  LEAU"; textSize=14f; setTextColor(Color.WHITE) },LinearLayout.LayoutParams(0,40,1f))
         header.addView(TextView(this).apply { text="×"; textSize=25f; setTextColor(Color.LTGRAY); setOnClickListener{showBubble()} },LinearLayout.LayoutParams(38,40))
         card.addView(header)
@@ -94,6 +94,19 @@ class LeauOverlayService : Service() {
         row.addView(TextView(this).apply{text="➤";textSize=20f;gravity=Gravity.CENTER;setTextColor(Color.rgb(185,255,99))},LinearLayout.LayoutParams(48,52))
         card.addView(row)
         r.addView(card,FrameLayout.LayoutParams(310,-2).apply{leftMargin=x;topMargin=y})
+
+        var downX=0f; var downY=0f; var startX=x; var startY=y
+        header.setOnTouchListener { _, e ->
+            when(e.action){
+                MotionEvent.ACTION_DOWN->{downX=e.rawX;downY=e.rawY;startX=x;startY=y}
+                MotionEvent.ACTION_MOVE->{
+                    x=(startX+(e.rawX-downX)).toInt().coerceAtLeast(0)
+                    y=(startY+(e.rawY-downY)).toInt().coerceAtLeast(0)
+                    (card.layoutParams as FrameLayout.LayoutParams).also{it.leftMargin=x;it.topMargin=y;card.layoutParams=it}
+                }
+            }
+            true
+        }
         input.requestFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input,InputMethodManager.SHOW_IMPLICIT)
     }
@@ -110,18 +123,11 @@ class LeauOverlayService : Service() {
     }
 
     private fun fmt(ms:Long):String{val s=ms/1000;return String.format("%02d:%02d",s/60,s%60)}
-
-    private fun move(rawX:Float,rawY:Float){
+    private fun moveBubble(rawX:Float,rawY:Float){
         x=(rawX-38).toInt().coerceAtLeast(0);y=(rawY-38).toInt().coerceAtLeast(0)
         root?.let{v->(v.layoutParams as WindowManager.LayoutParams).also{p->p.x=x;p.y=y;wm.updateViewLayout(v,p)}}
     }
-
-    private fun overlayParams(w:Int,h:Int,focus:Boolean)=WindowManager.LayoutParams(
-        w,h,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-        if(focus) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-        PixelFormat.TRANSLUCENT
-    ).apply{gravity=Gravity.TOP or Gravity.START;x=this@LeauOverlayService.x;y=this@LeauOverlayService.y}
-
+    private fun overlayParams(w:Int,h:Int,focus:Boolean)=WindowManager.LayoutParams(w,h,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,if(focus)WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT).apply{gravity=Gravity.TOP or Gravity.START;x=this@LeauOverlayService.x;y=this@LeauOverlayService.y}
     private fun openApp(){startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP));stopSelf()}
     private fun hideKeyboard(){root?.windowToken?.let{(getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it,0)}}
     private fun removeOverlay(){root?.let{try{wm.removeView(it)}catch(_:Exception){}};root=null}
