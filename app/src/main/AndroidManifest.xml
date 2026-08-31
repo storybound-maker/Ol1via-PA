@@ -42,6 +42,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ScreenshotActivity"
+            android:exported="false"
+            android:theme="@style/Theme.LeauPA" />
+
         <service
             android:name=".LeauOverlayService"
             android:exported="false"
