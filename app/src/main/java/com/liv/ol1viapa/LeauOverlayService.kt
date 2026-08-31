@@ -46,6 +46,9 @@ class LeauOverlayService : Service() {
     private var singleTapRunnable: Runnable? = null
     private var pomodoroRunnable: Runnable? = null
     private var pomodoroLabel: TextView? = null
+    private var speechEyes: ImageView? = null
+    private var speechStatus: TextView? = null
+    private var speechListening = false
 
     override fun onCreate() {
         super.onCreate()
@@ -60,9 +63,7 @@ class LeauOverlayService : Service() {
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        } else startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun createNotificationChannel() {
@@ -97,21 +98,15 @@ class LeauOverlayService : Service() {
         }
         val params = baseParams(size, size, false).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(14)
-            y = dp(180)
+            x = dp(14); y = dp(180)
         }
         installBubbleTouch(view, params)
-        bubble = view
-        bubbleParams = params
+        bubble = view; bubbleParams = params
         runCatching { windowManager.addView(view, params) }
     }
 
     private fun installBubbleTouch(view: View, params: WindowManager.LayoutParams) {
-        var downX = 0f
-        var downY = 0f
-        var startX = 0
-        var startY = 0
-        var moved = false
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; moved = false; true }
@@ -125,8 +120,7 @@ class LeauOverlayService : Service() {
                     if (!moved) {
                         val now = System.currentTimeMillis()
                         if (now - lastTap <= TAP_WINDOW) {
-                            singleTapRunnable?.let(handler::removeCallbacks)
-                            lastTap = 0L
+                            singleTapRunnable?.let(handler::removeCallbacks); lastTap = 0L
                             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                         } else {
                             lastTap = now
@@ -143,58 +137,50 @@ class LeauOverlayService : Service() {
 
     private fun showPill() {
         if (!Settings.canDrawOverlays(this)) return
-        removeBubble()
-        removePill()
+        removeBubble(); removePill()
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(7), dp(8), dp(7))
             background = roundedBackground(0xF20C1513.toInt(), 34).apply { setStroke(dp(1), 0xFF3D8170.toInt()) }
             elevation = dp(18).toFloat()
         }
         val eyes = ImageView(this).apply {
-            setImageResource(R.drawable.leau_eyes)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(3), dp(3), dp(5), dp(3))
-            contentDescription = "LEAU microphone"
-            animateEyes(this)
+            setImageResource(R.drawable.leau_eyes); scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(3), dp(3), dp(5), dp(3)); contentDescription = "LEAU microphone"; animateEyes(this)
         }
         root.addView(eyes, LinearLayout.LayoutParams(dp(48), dp(42)))
         val status = TextView(this).apply { text = "LEAU"; setTextColor(0xFFE7FFF7.toInt()); textSize = 12f; setPadding(dp(2), 0, dp(8), 0) }
         root.addView(status, LinearLayout.LayoutParams(dp(48), -1))
-        pomodoroLabel = status
+        pomodoroLabel = status; speechEyes = eyes; speechStatus = status
         val input = EditText(this).apply {
-            hint = "Ask LEAU anything..."
-            setHintTextColor(0xFF7D9E94.toInt())
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            setSingleLine(true)
-            setPadding(dp(4), 0, dp(4), 0)
-            background = null
+            hint = "Ask LEAU anything..."; setHintTextColor(0xFF7D9E94.toInt()); setTextColor(Color.WHITE)
+            textSize = 14f; setSingleLine(true); setPadding(dp(4), 0, dp(4), 0); background = null
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
         }
         root.addView(input, LinearLayout.LayoutParams(0, -1, 1f))
         val send = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_send)
-            setColorFilter(0xFFB8FF5A.toInt())
-            background = roundedBackground(0x331B4A40.toInt(), 22)
-            contentDescription = "Send"
+            setImageResource(android.R.drawable.ic_menu_send); setColorFilter(0xFFB8FF5A.toInt())
+            background = roundedBackground(0x331B4A40.toInt(), 22); contentDescription = "Send"
         }
         root.addView(send, LinearLayout.LayoutParams(dp(42), dp(42)))
+
         val params = baseParams(dp(360), dp(64), true).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(90)
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(90)
             flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         }
-        pill = root
-        pillParams = params
+        pill = root; pillParams = params
         runCatching { windowManager.addView(root, params) }
         installPillDrag(root, eyes, params)
+
+        // ACTION_OUTSIDE is delivered to the window, not reliably to a child listener.
+        // Use a dedicated touch interceptor so tapping anywhere outside the pill dismisses it.
         root.setOnTouchListener { _, event ->
             if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) { hideAll(); true } else false
         }
+
         eyes.setOnClickListener {
-            input.clearFocus()
+            speechListening = !speechListening
+            updateSpeechVisual()
             startMainSpeechFromOverlay()
         }
         send.setOnClickListener { sendOverlayMessage(input) }
@@ -207,19 +193,16 @@ class LeauOverlayService : Service() {
     }
 
     private fun installPillDrag(root: View, handle: View, params: WindowManager.LayoutParams) {
-        var downX = 0f
-        var downY = 0f
-        var startX = 0
-        var startY = 0
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         handle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; true }
                 MotionEvent.ACTION_MOVE -> {
                     params.x = startX + (event.rawX - downX).toInt()
                     params.y = (startY + (event.rawY - downY).toInt()).coerceAtLeast(0)
-                    runCatching { windowManager.updateViewLayout(root, params) }
-                    true
+                    runCatching { windowManager.updateViewLayout(root, params) }; true
                 }
+                MotionEvent.ACTION_UP -> false
                 else -> false
             }
         }
@@ -233,27 +216,38 @@ class LeauOverlayService : Service() {
         }.start()
     }
 
+    private fun updateSpeechVisual() {
+        val eyes = speechEyes ?: return
+        val status = speechStatus ?: return
+        if (speechListening) {
+            eyes.background = roundedBackground(0x332B5C45.toInt(), 22).apply { setStroke(dp(2), 0xFFB8FF5A.toInt()) }
+            status.text = "Listening…"
+            status.setTextColor(0xFFB8FF5A.toInt())
+            eyes.animate().scaleX(1.10f).scaleY(1.10f).setDuration(350L).start()
+        } else {
+            eyes.background = null
+            status.text = "LEAU"
+            status.setTextColor(0xFFE7FFF7.toInt())
+            eyes.animate().scaleX(1f).scaleY(1f).setDuration(250L).start()
+        }
+    }
+
     private fun startMainSpeechFromOverlay() {
-        startActivity(Intent(this, MainActivity::class.java).apply {
+        val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("start_voice", true)
-        })
+        }
+        startActivity(intent)
     }
 
     private fun sendOverlayMessage(input: EditText) {
-        val text = input.text.toString().trim()
-        if (text.isEmpty()) return
-        input.setText("")
-        val label = pomodoroLabel ?: return
-        label.text = "Thinking…"
-        val history = mutableListOf<JSONObject>()
-        LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
-        LeauApi.sendMessage(text, history) { result ->
-            handler.post {
-                result.onSuccess { reply -> label.text = reply.take(24) }.onFailure { label.text = "Try again" }
-                updateLiveActivity()
-            }
-        }
+        val text = input.text.toString().trim(); if (text.isEmpty()) return
+        input.setText(""); val label = pomodoroLabel ?: return; label.text = "Thinking…"
+        val history = mutableListOf<JSONObject>(); LeauMemory.buildMemoryHistoryMessage(this)?.let(history::add)
+        LeauApi.sendMessage(text, history) { result -> handler.post {
+            result.onSuccess { reply -> label.text = reply.take(24) }.onFailure { label.text = "Try again" }
+            updateLiveActivity()
+        } }
     }
 
     private fun updateLiveActivity() {
@@ -266,31 +260,20 @@ class LeauOverlayService : Service() {
                     if (LeauPomodoro.isRunning(this@LeauOverlayService)) {
                         pomodoroLabel?.text = "${LeauPomodoro.label(this@LeauOverlayService)}  ${LeauPomodoro.formatRemaining(LeauPomodoro.endAt(this@LeauOverlayService))}"
                         handler.postDelayed(this, 1000L)
-                    } else {
-                        pomodoroLabel?.text = "✓ Focus complete"
-                        pomodoroRunnable = null
-                    }
+                    } else { pomodoroLabel?.text = "✓ Focus complete"; pomodoroRunnable = null }
                 }
             }
-            pomodoroRunnable = tick
-            handler.post(tick)
-        } else {
-            pomodoroLabel?.text = "LEAU"
-        }
+            pomodoroRunnable = tick; handler.post(tick)
+        } else if (!speechListening) pomodoroLabel?.text = "LEAU"
     }
 
     private fun baseParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams = WindowManager.LayoutParams(width, height, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, if (focusable) WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
     private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
     private fun dp(value: Int): Int = (value.toFloat() * resources.displayMetrics.density).roundToInt()
     private fun removeBubble() { bubble?.let { runCatching { windowManager.removeView(it) } }; bubble = null; bubbleParams = null }
-    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pillParams = null; pomodoroLabel = null; pomodoroRunnable?.let(handler::removeCallbacks); pomodoroRunnable = null }
+    private fun removePill() { pill?.let { runCatching { windowManager.removeView(it) } }; pill = null; pillParams = null; pomodoroLabel = null; speechEyes = null; speechStatus = null; speechListening = false; pomodoroRunnable?.let(handler::removeCallbacks); pomodoroRunnable = null }
     private fun hideAll() { removePill(); removeBubble() }
 
-    override fun onDestroy() {
-        handler.removeCallbacksAndMessages(null)
-        removePill(); removeBubble()
-        super.onDestroy()
-    }
-
+    override fun onDestroy() { handler.removeCallbacksAndMessages(null); removePill(); removeBubble(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 }
