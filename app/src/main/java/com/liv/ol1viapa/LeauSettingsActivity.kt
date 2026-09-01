@@ -1,6 +1,7 @@
 package com.liv.ol1viapa
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -86,20 +87,31 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     }
 }
 
-@Composable private fun AccountSection(context: Context) {
+private fun openAuth(context: Context) {
+    context.startActivity(Intent(context, LeauOnboardingActivity::class.java).putExtra(LeauOnboardingActivity.EXTRA_FORCE_AUTH, true))
+}
+
+@Composable
+private fun AccountSection(context: Context) {
+    var refresh by remember { mutableIntStateOf(0) }
     val email = LeauSettings.accountEmail(context)
     if (email.isBlank()) {
-        SettingsCard("Sign in with Google", "Google authentication will be connected to the configured account provider", Icons.Outlined.AccountCircle) { }
-        SettingsCard("Create account", "Create a Leau account with email and password", Icons.Outlined.PersonAdd) { }
-        SettingsCard("Sign in", "Use your existing Leau account", Icons.Outlined.Login) { }
-        Text("Account authentication is intentionally kept separate from local settings so credentials are never stored in this screen.", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
+        SettingsCard("Sign in with Google", "Use your Google account with Leau", Icons.Outlined.AccountCircle) { openAuth(context) }
+        SettingsCard("Create account", "Create a Leau account with email and password", Icons.Outlined.PersonAdd) { openAuth(context) }
+        SettingsCard("Sign in", "Use your existing Leau account", Icons.Outlined.Login) { openAuth(context) }
+        Text("Your credentials are handled by Firebase Authentication.", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
     } else {
         SettingsCard(LeauSettings.accountName(context).ifBlank { "Leau account" }, email, Icons.Outlined.Person) { }
-        SettingsCard("Sign out", "Remove this account from this device", Icons.Outlined.Logout) { LeauSettings.clearAccount(context) }
+        SettingsCard("Sign out", "Sign out of Firebase on this device", Icons.Outlined.Logout) {
+            LeauAuth(context).signOut()
+            LeauSettings.clearAccount(context)
+            refresh++
+        }
     }
 }
 
-@Composable private fun AppearanceSection(context: Context, redraw: () -> Unit) {
+@Composable
+private fun AppearanceSection(context: Context, redraw: () -> Unit) {
     var theme by remember { mutableStateOf(LeauSettings.theme(context)) }
     var font by remember { mutableFloatStateOf(LeauSettings.fontScale(context)) }
     var motion by remember { mutableStateOf(LeauSettings.reduceMotion(context)) }
@@ -111,17 +123,20 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     ToggleCard("Reduce motion", "Limit Leau animations", motion) { motion = it; LeauSettings.setReduceMotion(context, it); redraw() }
 }
 
-@Composable private fun NotificationsSection(context: Context, redraw: () -> Unit) {
+@Composable
+private fun NotificationsSection(context: Context, redraw: () -> Unit) {
     ToggleCard("Notifications", "Allow Leau alerts", LeauSettings.notifications(context)) { LeauSettings.setNotifications(context, it); redraw() }
     ToggleCard("Sounds", "Play notification sounds", LeauSettings.haptics(context)) { LeauSettings.setHaptics(context, it); redraw() }
 }
 
-@Composable private fun VoiceSection(context: Context, redraw: () -> Unit) {
+@Composable
+private fun VoiceSection(context: Context, redraw: () -> Unit) {
     ToggleCard("Voice responses", "Let Leau speak replies", LeauSettings.voiceResponses(context)) { LeauSettings.setVoiceResponses(context, it); redraw() }
     ToggleCard("Haptic feedback", "Touch feedback for controls", LeauSettings.haptics(context)) { LeauSettings.setHaptics(context, it); redraw() }
 }
 
-@Composable private fun AccessibilitySection(context: Context, redraw: () -> Unit) {
+@Composable
+private fun AccessibilitySection(context: Context, redraw: () -> Unit) {
     Text("Accessibility controls apply across Leau's main interface.", color = Muted, modifier = Modifier.padding(8.dp))
     Text("Font size is controlled in Appearance. Motion is controlled here and in Appearance so the setting is easy to find.", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
     ToggleCard("Reduce motion", "Minimize animation and movement", LeauSettings.reduceMotion(context)) { LeauSettings.setReduceMotion(context, it); redraw() }
@@ -129,24 +144,28 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     ToggleCard("High contrast", "Increase visual contrast", false) { }
 }
 
-@Composable private fun PillSection(context: Context, redraw: () -> Unit) {
+@Composable
+private fun PillSection(context: Context, redraw: () -> Unit) {
     ToggleCard("Floating Leau pill", "Enable the floating assistant when you leave the app", LeauSettings.floatingPill(context)) { LeauSettings.setFloatingPill(context, it); redraw() }
     ToggleCard("Start automatically", "Show the pill automatically after leaving Leau", LeauSettings.autoPill(context)) { LeauSettings.setAutoPill(context, it); redraw() }
     SettingsCard("Android overlay permission", "Open system permission controls", Icons.Outlined.Launch) { LeauSettings.openAppSettings(context) }
 }
 
-@Composable private fun MemorySection(context: Context, redraw: () -> Unit) {
+@Composable
+private fun MemorySection(context: Context, redraw: () -> Unit) {
     ToggleCard("Memory", "Allow Leau to save useful memories", LeauSettings.memory(context)) { LeauSettings.setMemory(context, it); redraw() }
     ToggleCard("Chat history", "Save conversations in the local vault", LeauSettings.chatHistory(context)) { LeauSettings.setChatHistory(context, it); redraw() }
     SettingsCard("Clear chat vault", "Delete saved conversations", Icons.Outlined.Delete) { LeauChatVault.clear(context); redraw() }
     SettingsCard("Forget all memories", "Delete everything Leau has remembered", Icons.Outlined.DeleteForever) { LeauMemory.clearMemories(context); redraw() }
 }
 
-@Composable private fun PermissionSection(context: Context) {
+@Composable
+private fun PermissionSection(context: Context) {
     SettingsCard("App permissions", "Open Android's Leau permission page", Icons.Outlined.Security) { LeauSettings.openAppSettings(context) }
 }
 
-@Composable private fun AboutSection(context: Context) {
+@Composable
+private fun AboutSection(context: Context) {
     SettingsCard("Leau", "Your personal AI companion", Icons.Outlined.Eco) { }
     Text("Version 1.0", color = Muted, modifier = Modifier.padding(12.dp))
     SettingsCard("Privacy", "How Leau handles your data", Icons.Outlined.PrivacyTip) { }
