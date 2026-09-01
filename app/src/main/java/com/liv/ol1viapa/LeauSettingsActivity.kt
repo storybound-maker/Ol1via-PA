@@ -103,7 +103,7 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     var theme by remember { mutableStateOf(LeauSettings.theme(context)) }
     var font by remember { mutableFloatStateOf(LeauSettings.fontScale(context)) }
     var motion by remember { mutableStateOf(LeauSettings.reduceMotion(context)) }
-    SettingsCard("Theme", "Dark / light / system") { theme = if (theme == "dark") "light" else if (theme == "light") "system" else "dark"; LeauSettings.setTheme(context, theme); redraw() }
+    SettingsCard(title = "Theme", subtitle = "Dark / light / system", icon = Icons.Default.Palette, onClick = { theme = when (theme) { "dark" -> "light"; "light" -> "system"; else -> "dark" }; LeauSettings.setTheme(context, theme); redraw() })
     Text("Current: ${theme.replaceFirstChar { it.uppercase() }}", color = Muted, modifier = Modifier.padding(horizontal = 12.dp))
     Spacer(Modifier.height(8.dp))
     Text("App font size", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp))
