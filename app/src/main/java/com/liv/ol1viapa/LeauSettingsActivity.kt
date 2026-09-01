@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.Launch
+import androidx.compose.material.icons.automirrored.outlined.Login
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,10 +57,10 @@ private fun LeauSettingsScreen(context: Context) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         key(refresh, fontScale) {
             if (section == null) {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyColumn(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.navigationBars)).padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item {
                         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { (context as? ComponentActivity)?.finish() }, modifier = Modifier.offset(y = 5.dp)) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Green) }
+                            IconButton(onClick = { (context as? ComponentActivity)?.finish() }, modifier = Modifier.offset(y = 5.dp)) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Green) }
                             Column(Modifier.weight(1f)) { Text("Leau", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold); Text("SETTINGS", color = Muted, style = MaterialTheme.typography.labelMedium) }
                         }
                     }
@@ -75,9 +80,9 @@ private fun LeauSettingsScreen(context: Context) {
 }
 
 @Composable private fun SettingsSection(title: String, context: Context, onBack: () -> Unit, redraw: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.navigationBars)).padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.offset(y = 5.dp)) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Green) }
+            IconButton(onClick = onBack, modifier = Modifier.offset(y = 5.dp)) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Green) }
             Text(title.replaceFirstChar { it.uppercase() }, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleLarge)
         }
         when (title) {
@@ -102,10 +107,10 @@ private fun openAuth(context: Context) = context.startActivity(Intent(context, L
     if (email.isBlank() || signedOut) {
         SettingsCard("Sign in with Google", "Use your Google account with Leau", Icons.Outlined.AccountCircle) { openAuth(context) }
         SettingsCard("Create account", "Create a Leau account with email and password", Icons.Outlined.PersonAdd) { openAuth(context) }
-        SettingsCard("Sign in", "Use your existing Leau account", Icons.Outlined.Login) { openAuth(context) }
+        SettingsCard("Sign in", "Use your existing Leau account", Icons.AutoMirrored.Outlined.Login) { openAuth(context) }
     } else {
         SettingsCard(LeauSettings.accountName(context).ifBlank { "Leau account" }, email, Icons.Outlined.Person) { }
-        SettingsCard("Sign out", "Sign out of Firebase on this device", Icons.Outlined.Logout) { LeauAuth(context).signOut(); LeauSettings.clearAccount(context); signedOut = true }
+        SettingsCard("Sign out", "Sign out of Firebase on this device", Icons.AutoMirrored.Outlined.Logout) { LeauAuth(context).signOut(); LeauSettings.clearAccount(context); signedOut = true }
     }
 }
 
@@ -147,7 +152,7 @@ private fun openAuth(context: Context) = context.startActivity(Intent(context, L
         redraw()
     }
     ToggleCard("Start automatically", "Keep the pill available after leaving Leau", LeauSettings.autoPill(context)) { LeauSettings.setAutoPill(context, it); redraw() }
-    SettingsCard("Overlay permission", "Open Android's floating-window permission", Icons.Outlined.Launch) { LeauSettings.openOverlaySettings(context) }
+    SettingsCard("Overlay permission", "Open Android's floating-window permission", Icons.AutoMirrored.Outlined.Launch) { LeauSettings.openOverlaySettings(context) }
 }
 
 @Composable private fun MemorySection(context: Context, redraw: () -> Unit) {
@@ -172,7 +177,7 @@ private fun openAuth(context: Context) = context.startActivity(Intent(context, L
     SettingsCard("Privacy", "Accounts use Firebase Authentication. Saved chat history and memories remain on this device unless a feature explicitly sends information to an online service. You can clear saved data from Settings.", Icons.Outlined.PrivacyTip) { }
     SettingsCard("Terms", "Leau is an assistant tool. Verify important information before acting on it. Leau does not replace professional advice, and online services may have their own terms.", Icons.Outlined.Description) { }
     SettingsCard("Health", "Health-related features and guidance are not enabled here.", Icons.Outlined.HealthAndSafety) { }
-    SettingsCard("Help & support", "Support entry point reserved for the next project phase.", Icons.Outlined.HelpOutline) { }
+    SettingsCard("Help & support", "Support entry point reserved for the next project phase.", Icons.AutoMirrored.Outlined.HelpOutline) { }
 }
 
 @Composable fun ToggleCard(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
