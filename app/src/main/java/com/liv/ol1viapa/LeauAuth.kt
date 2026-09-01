@@ -19,22 +19,36 @@ class LeauAuth(context: Context) {
     fun signUp(email: String, password: String, callback: (Result<FirebaseUser>) -> Unit) {
         if (!ready(callback)) return
         auth.createUserWithEmailAndPassword(email.trim(), password)
-            .addOnSuccessListener { callback(Result.success(it.user!!)) }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnSuccessListener { result ->
+                val user = result.user
+                if (user != null) {
+                    callback(Result.success(user))
+                } else {
+                    callback(Result.failure(IllegalStateException("Firebase created the account without returning a user.")))
+                }
+            }
+            .addOnFailureListener { error -> callback(Result.failure(error)) }
     }
 
     fun signIn(email: String, password: String, callback: (Result<FirebaseUser>) -> Unit) {
         if (!ready(callback)) return
         auth.signInWithEmailAndPassword(email.trim(), password)
-            .addOnSuccessListener { callback(Result.success(it.user!!)) }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnSuccessListener { result ->
+                val user = result.user
+                if (user != null) {
+                    callback(Result.success(user))
+                } else {
+                    callback(Result.failure(IllegalStateException("Firebase signed in without returning a user.")))
+                }
+            }
+            .addOnFailureListener { error -> callback(Result.failure(error)) }
     }
 
     fun sendPasswordReset(email: String, callback: (Result<Unit>) -> Unit) {
         if (!ready(callback)) return
         auth.sendPasswordResetEmail(email.trim())
             .addOnSuccessListener { callback(Result.success(Unit)) }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnFailureListener { error -> callback(Result.failure(error)) }
     }
 
     fun signOut() {
@@ -43,16 +57,18 @@ class LeauAuth(context: Context) {
 
     fun deleteAccount(callback: (Result<Unit>) -> Unit) {
         if (!ready(callback)) return
-        val user = auth.currentUser ?: return callback(Result.failure(IllegalStateException("No signed-in account.")))
+        val user = auth.currentUser
+            ?: return callback(Result.failure(IllegalStateException("No signed-in account.")))
         user.delete()
             .addOnSuccessListener { callback(Result.success(Unit)) }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnFailureListener { error -> callback(Result.failure(error)) }
     }
 
     fun googleSignInIntent(activity: Activity): android.content.Intent? {
         if (!FirebaseConfig.initialize(appContext)) return null
         val clientId = activity.getString(com.liv.ol1viapa.R.string.firebase_web_client_id)
         if (clientId.isBlank() || clientId.startsWith("REPLACE_")) return null
+
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(clientId)
             .requestEmail()
@@ -65,24 +81,39 @@ class LeauAuth(context: Context) {
         val task = GoogleSignIn.getSignedInAccountFromIntent(data)
         try {
             val account = task.getResult(ApiException::class.java)
-            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+            val idToken = account.idToken
+            if (idToken.isNullOrBlank()) {
+                callback(Result.failure(IllegalStateException("Google Sign-In did not return an ID token.")))
+                return
+            }
+
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
             auth.signInWithCredential(credential)
-                .addOnSuccessListener { callback(Result.success(it.user!!)) }
-                .addOnFailureListener { callback(Result.failure(it)) }
+                .addOnSuccessListener { result ->
+                    val user = result.user
+                    if (user != null) {
+                        callback(Result.success(user))
+                    } else {
+                        callback(Result.failure(IllegalStateException("Firebase signed in without returning a user.")))
+                    }
+                }
+                .addOnFailureListener { error -> callback(Result.failure(error)) }
         } catch (e: Exception) {
             callback(Result.failure(e))
         }
     }
 
     fun linkCurrentUserWithPassword(password: String, callback: (Result<Unit>) -> Unit) {
-        val user = currentUser() ?: return callback(Result.failure(IllegalStateException("No signed-in account.")))
-        val email = user.email ?: return callback(Result.failure(IllegalStateException("This account has no email.")))
+        val user = currentUser()
+            ?: return callback(Result.failure(IllegalStateException("No signed-in account.")))
+        val email = user.email
+            ?: return callback(Result.failure(IllegalStateException("This account has no email.")))
         user.linkWithCredential(EmailAuthProvider.getCredential(email, password))
             .addOnSuccessListener { callback(Result.success(Unit)) }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnFailureListener { error -> callback(Result.failure(error)) }
     }
 
-    private fun ready(callback: (Result<*>) -> Unit): Boolean {
+    private fun <T> ready(callback: (Result<T>) -> Unit): Boolean {
         if (FirebaseConfig.initialize(appContext)) return true
         callback(Result.failure(IllegalStateException("Firebase is not configured. Add the Leau Firebase project values to gradle.properties.")))
         return false
