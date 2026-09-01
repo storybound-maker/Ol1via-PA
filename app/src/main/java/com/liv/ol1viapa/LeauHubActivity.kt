@@ -32,14 +32,15 @@ private fun LeauHubScreen(context: Context) {
     Surface(Modifier.fillMaxSize(), color = Color(0xFF07110F)) {
         Column(Modifier.fillMaxSize().padding(20.dp)) {
             if (page == "home") {
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(14.dp))
                 Text("LEAU", style = MaterialTheme.typography.displaySmall, color = Color(0xFFB9FFB0))
                 Text("ASSISTANT HUB", style = MaterialTheme.typography.labelLarge, color = Color(0xFF79CFC0))
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(22.dp))
                 HubCard("🗂  Chat Vault", "Saved conversations and history") { conversations = LeauChatVault.getConversations(context); page = "history" }
                 HubCard("🧠  Memory", "Saved things Leau remembers") { memories = LeauMemory.getMemories(context); page = "memory" }
                 HubCard("🍅  Pomodoro", "Focus sessions and live activity") { }
                 HubCard("⚙  Settings", "Voice, bubble, notifications and permissions") { page = "settings" }
+                HubCard("◉  l1vo OS control", "Reserved for the l1vo OS project") { }
                 Spacer(Modifier.weight(1f))
                 Text("LEAU • always here", color = Color(0xFF55736C), modifier = Modifier.align(Alignment.CenterHorizontally))
             } else {
@@ -62,7 +63,7 @@ private fun LeauHubScreen(context: Context) {
                         HubCard("Floating bubble", "Always-available overlay") { }
                         HubCard("Notifications", "Timers, alarms and assistant alerts") { }
                         HubCard("Permissions", "Microphone and overlay access") { }
-                        HubCard("Appearance", "Dark futuristic LEAU theme") { }
+                        HubCard("Appearance", "Dark, light and system appearance") { }
                     }
                 }
             }
@@ -71,9 +72,9 @@ private fun LeauHubScreen(context: Context) {
 }
 
 @Composable private fun HubHeader(title: String, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("‹", color = Color(0xFFB9FFB0), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable { onBack() })
-        Spacer(Modifier.width(12.dp))
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("‹", color = Color(0xFFB9FFB0), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable { onBack() }.padding(8.dp))
+        Spacer(Modifier.width(8.dp))
         Text(title, style = MaterialTheme.typography.titleLarge, color = Color(0xFFE4FFF8))
     }
 }
