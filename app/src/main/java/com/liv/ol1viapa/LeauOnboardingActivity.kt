@@ -27,11 +27,13 @@ private val Muted = Color(0xFF8BA69C)
 
 class LeauOnboardingActivity : ComponentActivity() {
     private lateinit var auth: LeauAuth
+    private val forceAuth: Boolean
+        get() = intent.getBooleanExtra(EXTRA_FORCE_AUTH, false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         auth = LeauAuth(this)
-        if (LeauSettings.onboardingComplete(this) || auth.currentUser() != null) {
+        if (!forceAuth && (auth.currentUser() != null || LeauSettings.guestMode(this))) {
             openMain()
             return
         }
@@ -43,23 +45,32 @@ class LeauOnboardingActivity : ComponentActivity() {
         finish()
     }
 
-    private fun complete() {
+    private fun completeAccount() {
         LeauSettings.setOnboardingComplete(this, true)
+        LeauSettings.setGuestMode(this, false)
+        openMain()
+    }
+
+    private fun continueAsGuest() {
+        LeauSettings.setGuestMode(this, true)
         openMain()
     }
 
     private fun showResult(result: Result<*>, onError: (String) -> Unit) {
         result.onSuccess {
             val user = auth.currentUser()
-            LeauSettings.saveAccount(this, user?.displayName ?: "Leau user", user?.email ?: "", user?.providerData?.lastOrNull()?.providerId ?: "firebase")
-            complete()
+            if (user == null) {
+                onError("Authentication succeeded, but Leau could not load the account.")
+                return@onSuccess
+            }
+            LeauSettings.saveAccount(this, user.displayName ?: "Leau user", user.email ?: "", user.providerData.lastOrNull()?.providerId ?: "firebase")
+            completeAccount()
         }.onFailure { onError(it.message ?: "Authentication failed. Try again.") }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == GOOGLE_REQUEST) {
-            // The Firebase account is finalized only after the Google credential is exchanged.
             auth.finishGoogleSignIn(data) { result ->
                 runOnUiThread { showResult(result) {} }
             }
@@ -101,14 +112,15 @@ class LeauOnboardingActivity : ComponentActivity() {
                 when (mode) {
                     "welcome" -> {
                         AuthButton("Continue with Google", Icons.Outlined.AccountCircle) {
+                            error = ""
                             val intent = auth.googleSignInIntent(this@LeauOnboardingActivity)
-                            if (intent == null) error = "Firebase is not configured yet. Add the Firebase project values and Google web client ID."
+                            if (intent == null) error = "Firebase is not configured correctly. Check the Google web client ID and Firebase configuration."
                             else startActivityForResult(intent, GOOGLE_REQUEST)
                         }
                         AuthButton("Create account", Icons.Outlined.PersonAdd) { error = ""; mode = "create" }
                         AuthButton("Sign in", Icons.Outlined.Login) { error = ""; mode = "signin" }
                         Spacer(Modifier.height(12.dp))
-                        TextButton(onClick = { complete() }) { Text("Continue without an account", color = Muted) }
+                        TextButton(onClick = { continueAsGuest() }) { Text("Continue without an account", color = Muted) }
                     }
                     else -> {
                         if (mode == "create") Field("Name", name) { name = it }
@@ -120,7 +132,15 @@ class LeauOnboardingActivity : ComponentActivity() {
                         }
                         if (mode == "signin") TextButton(onClick = {
                             if (email.isBlank()) error = "Enter your email first."
-                            else { busy = true; auth.sendPasswordReset(email) { result -> runOnUiThread { busy = false; result.onSuccess { error = "Password reset email sent." }.onFailure { error = it.message ?: "Could not send reset email." } } } }
+                            else {
+                                busy = true
+                                auth.sendPasswordReset(email) { result ->
+                                    runOnUiThread {
+                                        busy = false
+                                        result.onSuccess { error = "Password reset email sent." }.onFailure { error = it.message ?: "Could not send reset email." }
+                                    }
+                                }
+                            }
                         }) { Text("Forgot password?", color = Green) }
                         TextButton(onClick = { mode = "welcome"; error = "" }) { Text("Back", color = Muted) }
                     }
@@ -130,7 +150,10 @@ class LeauOnboardingActivity : ComponentActivity() {
         }
     }
 
-    companion object { private const val GOOGLE_REQUEST = 7001 }
+    companion object {
+        private const val GOOGLE_REQUEST = 7001
+        const val EXTRA_FORCE_AUTH = "force_auth"
+    }
 }
 
 @Composable
