@@ -103,7 +103,7 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     var theme by remember { mutableStateOf(LeauSettings.theme(context)) }
     var font by remember { mutableFloatStateOf(LeauSettings.fontScale(context)) }
     var motion by remember { mutableStateOf(LeauSettings.reduceMotion(context)) }
-    SettingsCard(title = "Theme", subtitle = "Dark / light / system", icon = Icons.Default.Palette, onClick = { theme = when (theme) { "dark" -> "light"; "light" -> "system"; else -> "dark" }; LeauSettings.setTheme(context, theme); redraw() })
+    SettingsCard(title = "Theme", subtitle = "Dark / light / system", icon = Icons.Outlined.Palette, onClick = { theme = when (theme) { "dark" -> "light"; "light" -> "system"; else -> "dark" }; LeauSettings.setTheme(context, theme); redraw() })
     Text("Current: ${theme.replaceFirstChar { it.uppercase() }}", color = Muted, modifier = Modifier.padding(horizontal = 12.dp))
     Spacer(Modifier.height(8.dp))
     Text("App font size", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp))
@@ -154,7 +154,8 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     SettingsCard("Help & support", "Get help with Leau", Icons.Outlined.HelpOutline) { }
 }
 
-@Composable private fun ToggleCard(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+@Composable
+fun ToggleCard(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Card(Modifier.fillMaxWidth().padding(vertical = 5.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium); Text(subtitle, color = Muted, style = MaterialTheme.typography.bodySmall) }
@@ -163,7 +164,8 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     }
 }
 
-@Composable private fun SettingsCard(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+@Composable
+fun SettingsCard(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable { onClick() }, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = Green, modifier = Modifier.size(24.dp))
