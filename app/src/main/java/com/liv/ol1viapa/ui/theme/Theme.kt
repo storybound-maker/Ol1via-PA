@@ -2,6 +2,9 @@ package com.liv.ol1viapa.ui.theme
 
 import android.content.Context
 import android.content.res.Configuration
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -14,7 +17,8 @@ import androidx.compose.ui.text.TextStyle
 private val LeauDarkScheme = darkColorScheme(
     primary = LeauLime, onPrimary = Color.Black, primaryContainer = LeauSurfaceVariant, onPrimaryContainer = LeauText,
     secondary = LeauMint, onSecondary = Color.Black, secondaryContainer = LeauSurfaceVariant, onSecondaryContainer = LeauText,
-    tertiary = LeauGlow, onTertiary = Color.Black, background = LeauBackground, onBackground = LeauText,
+    tertiary = LeauGlow, onTertiary = Color.Black, tertiaryContainer = LeauSurfaceVariant, onTertiaryContainer = LeauText,
+    background = LeauBackground, onBackground = LeauText,
     surface = LeauBackground, onSurface = LeauText, surfaceVariant = LeauSurfaceVariant, onSurfaceVariant = LeauText, outline = LeauMuted
 )
 private val LeauLightScheme = lightColorScheme(
@@ -56,7 +60,13 @@ fun LeauPATheme(context: Context, content: @Composable () -> Unit) {
     val baseTypography = LeauTypography
     MaterialTheme(
         colorScheme = if (dark) LeauDarkScheme else LeauLightScheme,
-        typography = baseTypography.scaled(fontScale),
-        content = content
-    )
+        typography = baseTypography.scaled(fontScale)
+    ) {
+        // All Leau screens use edge-to-edge, so keep the entire interface below
+        // the system status bar. This prevents the leaf, Leau mark, headers and
+        // back buttons from being clipped or difficult to tap.
+        Box(Modifier.fillMaxSize().statusBarsPadding()) {
+            content()
+        }
+    }
 }
