@@ -1,10 +1,14 @@
 package com.liv.ol1viapa
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,9 +30,17 @@ private val Card = Color(0xFF0D1B17)
 private val Muted = Color(0xFF8BA69C)
 
 class LeauSettingsActivity : ComponentActivity() {
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { LeauPATheme { LeauSettingsScreen(this) } }
+    }
+    fun requestRuntimePermissions() {
+        val permissions = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        permissionLauncher.launch(permissions.toTypedArray())
     }
 }
 
@@ -42,23 +54,27 @@ private fun LeauSettingsScreen(context: Context) {
         if (section == null) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
-                contentPadding = PaddingValues(top = 28.dp, bottom = 36.dp),
+                contentPadding = PaddingValues(top = 18.dp, bottom = 36.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item {
-                    Text("Leau", color = Green, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                    Text("SETTINGS HUB", color = Muted, style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.height(18.dp))
+                    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { (context as? ComponentActivity)?.finish() }) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Green) }
+                        Column(Modifier.weight(1f)) {
+                            Text("Leau", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                            Text("SETTINGS", color = Muted, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
-                item { SettingsCard("Account", "${LeauSettings.accountEmail(context).ifBlank { "Sign in or create your account" }}", Icons.Outlined.Person) { section = "account" } }
-                item { SettingsCard("Appearance", "Theme, font and motion", Icons.Outlined.DarkMode) { section = "appearance" } }
+                item { SettingsCard("Account", LeauSettings.accountEmail(context).ifBlank { "Sign in or create your account" }, Icons.Outlined.Person) { section = "account" } }
+                item { SettingsCard("Appearance", "Theme, font size and motion", Icons.Outlined.DarkMode) { section = "appearance" } }
                 item { SettingsCard("Notifications", "Alerts, sounds and vibration", Icons.Outlined.Notifications) { section = "notifications" } }
                 item { SettingsCard("Voice & interaction", "Speech, listening and haptics", Icons.Outlined.RecordVoiceOver) { section = "voice" } }
-                item { SettingsCard("Accessibility", "Text size, contrast and motion", Icons.Outlined.Accessibility) { section = "accessibility" } }
+                item { SettingsCard("Accessibility", "Readable text and comfortable controls", Icons.Outlined.Accessibility) { section = "accessibility" } }
                 item { SettingsCard("Floating pill", "Control Leau when you leave the app", Icons.Outlined.BubbleChart) { section = "pill" } }
                 item { SettingsCard("Chats & memory", "History and what Leau remembers", Icons.Outlined.Psychology) { section = "memory" } }
-                item { SettingsCard("Permissions", "Microphone, overlay and app permissions", Icons.Outlined.Security) { section = "permissions" } }
-                item { SettingsCard("About Leau", "Version, help, privacy and terms", Icons.Outlined.Info) { section = "about" } }
+                item { SettingsCard("Permissions", "Microphone, notifications and overlay", Icons.Outlined.Security) { section = "permissions" } }
+                item { SettingsCard("About Leau", "Version, privacy, terms and support", Icons.Outlined.Info) { section = "about" } }
             }
         } else {
             SettingsSection(section!!, context, { section = null }, { redraw() })
@@ -69,7 +85,7 @@ private fun LeauSettingsScreen(context: Context) {
 @Composable
 private fun SettingsSection(title: String, context: Context, onBack: () -> Unit, redraw: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Green) }
             Text(title.replaceFirstChar { it.uppercase() }, color = Color.White, style = MaterialTheme.typography.titleLarge)
         }
@@ -87,15 +103,13 @@ private fun SettingsSection(title: String, context: Context, onBack: () -> Unit,
     }
 }
 
-private fun openAuth(context: Context) {
-    context.startActivity(Intent(context, LeauOnboardingActivity::class.java).putExtra(LeauOnboardingActivity.EXTRA_FORCE_AUTH, true))
-}
+private fun openAuth(context: Context) = context.startActivity(Intent(context, LeauOnboardingActivity::class.java).putExtra(LeauOnboardingActivity.EXTRA_FORCE_AUTH, true))
 
 @Composable
 private fun AccountSection(context: Context) {
-    var refresh by remember { mutableIntStateOf(0) }
+    var signedOut by remember { mutableStateOf(false) }
     val email = LeauSettings.accountEmail(context)
-    if (email.isBlank()) {
+    if (email.isBlank() || signedOut) {
         SettingsCard("Sign in with Google", "Use your Google account with Leau", Icons.Outlined.AccountCircle) { openAuth(context) }
         SettingsCard("Create account", "Create a Leau account with email and password", Icons.Outlined.PersonAdd) { openAuth(context) }
         SettingsCard("Sign in", "Use your existing Leau account", Icons.Outlined.Login) { openAuth(context) }
@@ -105,7 +119,7 @@ private fun AccountSection(context: Context) {
         SettingsCard("Sign out", "Sign out of Firebase on this device", Icons.Outlined.Logout) {
             LeauAuth(context).signOut()
             LeauSettings.clearAccount(context)
-            refresh++
+            signedOut = true
         }
     }
 }
@@ -115,62 +129,79 @@ private fun AppearanceSection(context: Context, redraw: () -> Unit) {
     var theme by remember { mutableStateOf(LeauSettings.theme(context)) }
     var font by remember { mutableFloatStateOf(LeauSettings.fontScale(context)) }
     var motion by remember { mutableStateOf(LeauSettings.reduceMotion(context)) }
-    SettingsCard(title = "Theme", subtitle = "Dark / light / system", icon = Icons.Outlined.Palette, onClick = { theme = when (theme) { "dark" -> "light"; "light" -> "system"; else -> "dark" }; LeauSettings.setTheme(context, theme); redraw() })
+    SettingsCard("Theme", "Cycle Dark → Light → System", Icons.Outlined.Palette) {
+        theme = when (theme) { "dark" -> "light"; "light" -> "system"; else -> "dark" }
+        LeauSettings.setTheme(context, theme); redraw()
+    }
     Text("Current: ${theme.replaceFirstChar { it.uppercase() }}", color = Muted, modifier = Modifier.padding(horizontal = 12.dp))
     Spacer(Modifier.height(8.dp))
     Text("App font size", color = Color.White, modifier = Modifier.padding(horizontal = 12.dp))
     Slider(value = font, onValueChange = { font = it; LeauSettings.setFontScale(context, it); redraw() }, valueRange = .85f..1.35f, steps = 4)
-    ToggleCard("Reduce motion", "Limit Leau animations", motion) { motion = it; LeauSettings.setReduceMotion(context, it); redraw() }
+    Text("${(font * 100).toInt()}%", color = Muted, modifier = Modifier.padding(horizontal = 12.dp))
+    ToggleCard("Reduce motion", "Minimize non-essential animation", motion) { motion = it; LeauSettings.setReduceMotion(context, it); redraw() }
 }
 
 @Composable
 private fun NotificationsSection(context: Context, redraw: () -> Unit) {
-    ToggleCard("Notifications", "Allow Leau alerts", LeauSettings.notifications(context)) { LeauSettings.setNotifications(context, it); redraw() }
-    ToggleCard("Sounds", "Play notification sounds", LeauSettings.haptics(context)) { LeauSettings.setHaptics(context, it); redraw() }
+    ToggleCard("Notifications", "Allow Leau alerts", LeauSettings.notifications(context)) { LeauSettings.setNotifications(context, it); if (it && context is LeauSettingsActivity) context.requestRuntimePermissions(); redraw() }
+    ToggleCard("Sounds", "Play assistant notification sounds", LeauSettings.sounds(context)) { LeauSettings.setSounds(context, it); redraw() }
+    ToggleCard("Haptic feedback", "Vibrate for supported controls", LeauSettings.haptics(context)) { LeauSettings.setHaptics(context, it); redraw() }
 }
 
 @Composable
 private fun VoiceSection(context: Context, redraw: () -> Unit) {
     ToggleCard("Voice responses", "Let Leau speak replies", LeauSettings.voiceResponses(context)) { LeauSettings.setVoiceResponses(context, it); redraw() }
     ToggleCard("Haptic feedback", "Touch feedback for controls", LeauSettings.haptics(context)) { LeauSettings.setHaptics(context, it); redraw() }
+    SettingsCard("Speech permission", "Grant microphone access for tap-to-speak", Icons.Outlined.Mic) { if (context is LeauSettingsActivity) context.requestRuntimePermissions() }
 }
 
 @Composable
 private fun AccessibilitySection(context: Context, redraw: () -> Unit) {
-    Text("Accessibility controls apply across Leau's main interface.", color = Muted, modifier = Modifier.padding(8.dp))
-    Text("Font size is controlled in Appearance. Motion is controlled here and in Appearance so the setting is easy to find.", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+    Text("These controls affect the same shared preferences used by the main Leau interface.", color = Muted, modifier = Modifier.padding(8.dp))
     ToggleCard("Reduce motion", "Minimize animation and movement", LeauSettings.reduceMotion(context)) { LeauSettings.setReduceMotion(context, it); redraw() }
-    ToggleCard("Larger touch targets", "Accessibility-friendly control sizing", false) { }
-    ToggleCard("High contrast", "Increase visual contrast", false) { }
+    Text("Font size is controlled in Appearance so there is one source of truth.", color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
 }
 
 @Composable
 private fun PillSection(context: Context, redraw: () -> Unit) {
-    ToggleCard("Floating Leau pill", "Enable the floating assistant when you leave the app", LeauSettings.floatingPill(context)) { LeauSettings.setFloatingPill(context, it); redraw() }
-    ToggleCard("Start automatically", "Show the pill automatically after leaving Leau", LeauSettings.autoPill(context)) { LeauSettings.setAutoPill(context, it); redraw() }
-    SettingsCard("Android overlay permission", "Open system permission controls", Icons.Outlined.Launch) { LeauSettings.openAppSettings(context) }
+    ToggleCard("Floating Leau pill", "Enable the floating assistant outside the app", LeauSettings.floatingPill(context)) { value ->
+        LeauSettings.setFloatingPill(context, value)
+        if (value) {
+            if (android.provider.Settings.canDrawOverlays(context)) context.startService(Intent(context, LeauOverlayService::class.java).setAction(LeauOverlayService.ACTION_SHOW))
+            else LeauSettings.openOverlaySettings(context)
+        } else context.startService(Intent(context, LeauOverlayService::class.java).setAction(LeauOverlayService.ACTION_HIDE))
+        redraw()
+    }
+    ToggleCard("Start automatically", "Keep the pill available after leaving Leau", LeauSettings.autoPill(context)) { LeauSettings.setAutoPill(context, it); redraw() }
+    SettingsCard("Overlay permission", "Open Android's floating-window permission", Icons.Outlined.Launch) { LeauSettings.openOverlaySettings(context) }
 }
 
 @Composable
 private fun MemorySection(context: Context, redraw: () -> Unit) {
     ToggleCard("Memory", "Allow Leau to save useful memories", LeauSettings.memory(context)) { LeauSettings.setMemory(context, it); redraw() }
-    ToggleCard("Chat history", "Save conversations in the local vault", LeauSettings.chatHistory(context)) { LeauSettings.setChatHistory(context, it); redraw() }
-    SettingsCard("Clear chat vault", "Delete saved conversations", Icons.Outlined.Delete) { LeauChatVault.clear(context); redraw() }
+    ToggleCard("Chat history", "Save conversations in the local chat vault", LeauSettings.chatHistory(context)) { LeauSettings.setChatHistory(context, it); redraw() }
+    SettingsCard("Clear chat vault", "Delete all saved conversations", Icons.Outlined.Delete) { LeauChatVault.clear(context); redraw() }
     SettingsCard("Forget all memories", "Delete everything Leau has remembered", Icons.Outlined.DeleteForever) { LeauMemory.clearMemories(context); redraw() }
 }
 
 @Composable
 private fun PermissionSection(context: Context) {
-    SettingsCard("App permissions", "Open Android's Leau permission page", Icons.Outlined.Security) { LeauSettings.openAppSettings(context) }
+    val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    val overlayGranted = android.provider.Settings.canDrawOverlays(context)
+    SettingsCard("Microphone", if (micGranted) "Granted" else "Required for voice interaction", Icons.Outlined.Mic) { if (context is LeauSettingsActivity) context.requestRuntimePermissions() }
+    SettingsCard("Notifications", "Manage Android notification permission", Icons.Outlined.Notifications) { LeauSettings.openNotificationSettings(context) }
+    SettingsCard("Floating overlay", if (overlayGranted) "Granted" else "Required for the floating pill", Icons.Outlined.BubbleChart) { LeauSettings.openOverlaySettings(context) }
+    SettingsCard("App permissions", "Open Android's complete Leau permission page", Icons.Outlined.Security) { LeauSettings.openAppSettings(context) }
 }
 
 @Composable
 private fun AboutSection(context: Context) {
     SettingsCard("Leau", "Your personal AI companion", Icons.Outlined.Eco) { }
     Text("Version 1.0", color = Muted, modifier = Modifier.padding(12.dp))
-    SettingsCard("Privacy", "How Leau handles your data", Icons.Outlined.PrivacyTip) { }
-    SettingsCard("Terms", "Terms of use", Icons.Outlined.Description) { }
-    SettingsCard("Help & support", "Get help with Leau", Icons.Outlined.HelpOutline) { }
+    SettingsCard("Privacy", "Leau uses Firebase Authentication for accounts. Chat history and memories are stored locally on this device unless a feature explicitly sends information to an online service. You control saved history and memories from Settings.", Icons.Outlined.PrivacyTip) { }
+    SettingsCard("Terms", "Leau is provided as an assistant tool. Verify important information before acting on it; Leau does not replace professional advice. Use of online services is subject to their applicable terms.", Icons.Outlined.Description) { }
+    SettingsCard("Health", "Health-related features and guidance are not enabled here.", Icons.Outlined.HealthAndSafety) { }
+    SettingsCard("Help & support", "Support entry point reserved for the next project phase.", Icons.Outlined.HelpOutline) { }
 }
 
 @Composable
