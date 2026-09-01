@@ -18,6 +18,7 @@ object LeauSettings {
     private const val MEMORY = "memory"
     private const val CHAT_HISTORY = "chat_history"
     private const val ONBOARDING = "onboarding_complete"
+    private const val GUEST_MODE = "guest_mode"
     private const val ACCOUNT_NAME = "account_name"
     private const val ACCOUNT_EMAIL = "account_email"
     private const val ACCOUNT_PROVIDER = "account_provider"
@@ -46,11 +47,13 @@ object LeauSettings {
     fun setChatHistory(context: Context, value: Boolean) = prefs(context).edit().putBoolean(CHAT_HISTORY, value).apply()
     fun onboardingComplete(context: Context) = prefs(context).getBoolean(ONBOARDING, false)
     fun setOnboardingComplete(context: Context, value: Boolean) = prefs(context).edit().putBoolean(ONBOARDING, value).apply()
+    fun guestMode(context: Context) = prefs(context).getBoolean(GUEST_MODE, false)
+    fun setGuestMode(context: Context, value: Boolean) = prefs(context).edit().putBoolean(GUEST_MODE, value).apply()
     fun accountName(context: Context) = prefs(context).getString(ACCOUNT_NAME, "") ?: ""
     fun accountEmail(context: Context) = prefs(context).getString(ACCOUNT_EMAIL, "") ?: ""
     fun accountProvider(context: Context) = prefs(context).getString(ACCOUNT_PROVIDER, "") ?: ""
-    fun saveAccount(context: Context, name: String, email: String, provider: String) = prefs(context).edit().putString(ACCOUNT_NAME, name).putString(ACCOUNT_EMAIL, email).putString(ACCOUNT_PROVIDER, provider).apply()
-    fun clearAccount(context: Context) = prefs(context).edit().remove(ACCOUNT_NAME).remove(ACCOUNT_EMAIL).remove(ACCOUNT_PROVIDER).apply()
+    fun saveAccount(context: Context, name: String, email: String, provider: String) = prefs(context).edit().putString(ACCOUNT_NAME, name).putString(ACCOUNT_EMAIL, email).putString(ACCOUNT_PROVIDER, provider).putBoolean(GUEST_MODE, false).apply()
+    fun clearAccount(context: Context) = prefs(context).edit().remove(ACCOUNT_NAME).remove(ACCOUNT_EMAIL).remove(ACCOUNT_PROVIDER).putBoolean(GUEST_MODE, false).putBoolean(ONBOARDING, false).apply()
 
     fun openAppSettings(context: Context) {
         context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
