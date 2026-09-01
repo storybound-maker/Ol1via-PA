@@ -1,7 +1,9 @@
 package com.liv.ol1viapa
 
+import android.Manifest
 import android.app.Application
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -29,6 +31,12 @@ class LeauApplication : Application() {
     }
 
     private fun startLeauOverlayService() {
+        // Do not start the microphone foreground service until RECORD_AUDIO
+        // has been granted. Android 14+ rejects microphone FGS startup
+        // without the runtime microphone permission.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
         runCatching {
             ContextCompat.startForegroundService(this, Intent(this, LeauOverlayService::class.java))
         }.onFailure {
@@ -37,6 +45,11 @@ class LeauApplication : Application() {
     }
 
     private fun sendOverlayCommand(action: String) {
+        // Avoid implicitly starting the microphone foreground service before
+        // its runtime permission is available.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
         runCatching {
             startService(Intent(this, LeauOverlayService::class.java).setAction(action))
         }
